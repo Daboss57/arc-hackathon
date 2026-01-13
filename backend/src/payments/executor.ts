@@ -1,13 +1,23 @@
 import { v4 as uuid } from 'uuid';
 import { logger } from '../lib/logger.js';
 import { validatePayment } from '../policy/engine.js';
-import { getWallet, getBalance, reserveFunds, releaseFunds, recordTransaction, updateTransactionStatus } from '../treasury/wallet.service.js';
-import { preparePayment, settlePayment } from './x402-client.js';
+import {
+    getWallet,
+    reserveFunds,
+    releaseFunds,
+    recordTransaction,
+    updateTransactionStatus,
+    transferUsdc
+} from '../treasury/wallet.service.js';
 import type { PaymentRequest, PaymentResult } from './types.js';
 
 export async function executePayment(request: PaymentRequest): Promise<PaymentResult> {
     const paymentId = `pay_${uuid().slice(0, 8)}`;
-    logger.info('Starting payment execution', { paymentId, amount: request.amount, recipient: request.recipient });
+    logger.info('Starting payment execution', {
+        paymentId,
+        amount: request.amount,
+        recipient: request.recipient
+    });
 
     const validation = await validatePayment({
         amount: request.amount,
@@ -61,38 +71,38 @@ export async function executePayment(request: PaymentRequest): Promise<PaymentRe
     });
 
     try {
-        const paymentPayload = await preparePayment(
-            {
-                scheme: 'exact',
-                network: 'arc',
-                recipient: request.recipient,
-                amount: request.amount,
-                currency: 'USDC',
-                resource: request.description || 'payment',
-            },
-            wallet.address
-        );
+        // Execute real USDC transfer via Circle
+        const transfer = await transferUsdc(request.recipient, request.amount);
 
-        const settlement = await settlePayment(paymentPayload);
-
-        if (!settlement.success) {
+        if (!transfer.success) {
             await releaseFunds(request.amount);
             await updateTransactionStatus(tx.id, 'failed');
             return {
                 paymentId,
                 status: 'failed',
-                error: settlement.error,
+                error: transfer.error || 'Transfer failed',
                 policyResult: { passed: true, appliedRules },
             };
         }
 
-        await updateTransactionStatus(tx.id, 'confirmed', settlement.txHash);
-        logger.info('Payment completed', { paymentId, txHash: settlement.txHash });
+        // Update with real transaction hash
+        const txHash = transfer.txHash || transfer.transactionId || '';
+        await updateTransactionStatus(tx.id, 'confirmed', txHash);
+
+        // Clear reservation since Circle has already deducted the balance
+        await releaseFunds(request.amount);
+
+        logger.info('Payment completed via Circle', {
+            paymentId,
+            transactionId: transfer.transactionId,
+            txHash: transfer.txHash,
+            state: transfer.state
+        });
 
         return {
             paymentId,
             status: 'completed',
-            txHash: settlement.txHash,
+            txHash,
             policyResult: { passed: true, appliedRules },
         };
     } catch (err) {
