@@ -1,0 +1,22 @@
+{
+    "name": "autowealth-ai-service",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Financial Advisor and Buyer Agent logic",
+    "main": "dist/index.js",
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "build": "tsc",
+        "start": "node dist/index.js"
+    },
+    "dependencies": {
+        "@google/generative-ai": "^0.21.0",
+        "dotenv": "^16.4.5",
+        "zod": "^3.24.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.5",
+        "tsx": "^4.19.2",
+        "typescript": "^5.7.3"
+    }
+}

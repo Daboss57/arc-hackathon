@@ -1,0 +1,10 @@
+{
+    "name": "autowealth-frontend",
+    "version": "0.1.0",
+    "private": true,
+    "description": "AutoWealth Dashboard UI",
+    "scripts": {
+        "dev": "echo 'Frontend not yet initialized - use npx create-vite or similar'",
+        "build": "echo 'Frontend not yet initialized'"
+    }
+}

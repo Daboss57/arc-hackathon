@@ -1,0 +1,25 @@
+{
+  "name": "autowealth-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Trustless Autonomous Buyer + Financial Advice System on Arc",
+  "workspaces": [
+    "backend",
+    "ai-service",
+    "frontend"
+  ],
+  "scripts": {
+    "backend": "npm run dev --workspace=backend",
+    "ai": "npm run dev --workspace=ai-service",
+    "frontend": "npm run dev --workspace=frontend"
+  },
+  "keywords": [
+    "arc",
+    "usdc",
+    "circle",
+    "x402",
+    "autonomous-agent",
+    "micropayments"
+  ],
+  "license": "MIT"
+}
