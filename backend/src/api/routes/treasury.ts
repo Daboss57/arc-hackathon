@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getBalance, getTransactionHistory, initializeWallet, getWallet } from '../../treasury/wallet.service.js';
+import { getBalance, getTransactionHistory, initializeWallet, getWallet, getSpendingAnalytics } from '../../treasury/wallet.service.js';
 
 const router = Router();
 
@@ -39,6 +39,15 @@ router.post('/wallet/init', async (_req, res) => {
     try {
         const wallet = await initializeWallet();
         res.json(wallet);
+    } catch (err) {
+        res.status(500).json({ error: String(err) });
+    }
+});
+
+router.get('/analytics', async (_req, res) => {
+    try {
+        const analytics = await getSpendingAnalytics();
+        res.json(analytics);
     } catch (err) {
         res.status(500).json({ error: String(err) });
     }

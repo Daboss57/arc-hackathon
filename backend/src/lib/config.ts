@@ -4,6 +4,8 @@ import 'dotenv/config';
 const envSchema = z.object({
     CIRCLE_API_KEY: z.string().min(1),
     CIRCLE_ENTITY_SECRET: z.string().optional(),
+    CIRCLE_WALLET_SET_ID: z.string().optional(),
+    CIRCLE_WALLET_ID: z.string().optional(),
     ARC_RPC_URL: z.string().url().default('https://testnet.arc.network'),
     ARC_CHAIN_ID: z.coerce.number().default(1620),
     X402_FACILITATOR_URL: z.string().url().optional(),
