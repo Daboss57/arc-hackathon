@@ -62,7 +62,8 @@ export async function initializeWallet(): Promise<WalletInfo> {
 
                 logger.info('Wallet loaded from Circle', {
                     walletId: store.wallet.id,
-                    address: store.wallet.address
+                    address: store.wallet.address,
+                    blockchain: store.wallet.blockchain
                 });
 
                 await refreshBalance();
@@ -366,5 +367,18 @@ export async function getSpendingAnalytics(): Promise<SpendingAnalytics> {
         byCategory,
         recentTransactions: confirmedTxs.length,
         warning,
+    };
+}
+export function resetStoreForTesting() {
+    circleClient = null;
+    cachedTokenId = null;
+    store.wallet = null;
+    store.transactions = [];
+    store.balance = {
+        amount: '0.00',
+        currency: 'USDC',
+        reserved: '0.00',
+        available: '0.00',
+        lastUpdated: new Date(0), // Set to epoch to force refresh
     };
 }

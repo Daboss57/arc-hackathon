@@ -18,6 +18,8 @@ out/
 .vscode/
 *.swp
 *.swo
+.agent/
+
 
 # OS
 .DS_Store
