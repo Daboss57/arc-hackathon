@@ -7,6 +7,7 @@ import { seedDefaultPolicies } from '../policy/engine.js';
 import treasuryRoutes from './routes/treasury.js';
 import policyRoutes from './routes/policy.js';
 import paymentRoutes from './routes/payments.js';
+import vendorRoutes from './routes/vendors.js';
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.use(express.json());
 app.use('/api/treasury', treasuryRoutes);
 app.use('/api/policy', policyRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/vendors', vendorRoutes);
 
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
