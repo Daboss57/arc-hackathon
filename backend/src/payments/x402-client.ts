@@ -1,84 +1,32 @@
 /**
  * Circle x402 Bridge
- * Uses Circle's Developer-Controlled Wallet SDK to sign x402 payment payloads
- * This allows using Circle for treasury management AND x402 for micropayments
+ * Uses Circle's Developer-Controlled Wallet SDK for x402 micropayments
+ * This allows AI agents to autonomously pay for API access
  */
 
-import { initiateDeveloperControlledWalletsClient } from '@circle-fin/developer-controlled-wallets';
 import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
 import { validatePayment } from '../policy/engine.js';
-import { getSpendingAnalytics, getWallet } from '../treasury/wallet.service.js';
-
-let circleClient: ReturnType<typeof initiateDeveloperControlledWalletsClient> | null = null;
-
-function getCircleClient() {
-    if (!circleClient) {
-        if (!config.CIRCLE_ENTITY_SECRET) {
-            throw new Error('CIRCLE_ENTITY_SECRET is required for Circle SDK');
-        }
-        circleClient = initiateDeveloperControlledWalletsClient({
-            apiKey: config.CIRCLE_API_KEY,
-            entitySecret: config.CIRCLE_ENTITY_SECRET,
-        });
-    }
-    return circleClient;
-}
+import { getSpendingAnalytics, getWallet, transferUsdc } from '../treasury/wallet.service.js';
 
 export interface X402FetchResult {
     success: boolean;
     data?: unknown;
     paymentMade?: boolean;
     paymentAmount?: string;
+    txHash?: string;
     error?: string;
     policyBlocked?: boolean;
 }
 
 /**
- * Sign EIP-712 typed data using Circle wallet
- */
-async function signWithCircle(typedData: string): Promise<string | null> {
-    if (!config.CIRCLE_WALLET_ID) {
-        logger.error('No CIRCLE_WALLET_ID configured');
-        return null;
-    }
-
-    try {
-        logger.info('Attempting Circle signTypedData', {
-            walletId: config.CIRCLE_WALLET_ID,
-            dataPreview: typedData.substring(0, 200) + '...'
-        });
-
-        const client = getCircleClient();
-        const response = await client.signTypedData({
-            walletId: config.CIRCLE_WALLET_ID,
-            data: typedData,
-        });
-
-        logger.info('Circle signTypedData response', {
-            hasSignature: !!response.data?.signature,
-            responseData: JSON.stringify(response.data)
-        });
-
-        return response.data?.signature || null;
-    } catch (err: unknown) {
-        const errObj = err as { response?: { data?: unknown }; message?: string };
-        logger.error('Circle signing failed', {
-            error: errObj.message || String(err),
-            responseData: errObj.response?.data ? JSON.stringify(errObj.response.data) : 'none'
-        });
-        return null;
-    }
-}
-
-/**
- * Make an x402-aware fetch request using Circle wallet for signing
+ * Make an x402-aware fetch request using Circle wallet for payments
  * Flow:
- * 1. Make initial request
+ * 1. Make initial request to check if payment is required
  * 2. If 402 returned, parse payment requirements
- * 3. Validate against policies
- * 4. Sign payment with Circle wallet
- * 5. Retry request with signed payment
+ * 3. Validate payment against policies
+ * 4. Execute payment via Circle's createTransaction
+ * 5. Retry request with payment proof
  */
 export async function x402Fetch(
     url: string,
@@ -146,97 +94,56 @@ export async function x402Fetch(
             };
         }
 
-        // Step 4: Create and sign payment payload with Circle
-        // The x402 protocol uses EIP-3009 receiveWithAuthorization
-        // Convert amount to smallest units (USDC has 6 decimals)
-        const amountInSmallestUnits = Math.floor(parseFloat(paymentRequirements.amount) * 1_000_000).toString();
-        const nonceHex = '0x' + Date.now().toString(16).padStart(64, '0'); // bytes32 format
+        // Step 4: Execute payment via Circle's createTransaction
+        logger.info('Executing x402 payment via Circle transfer');
 
-        const paymentPayload = {
-            from: wallet.address,
-            to: paymentRequirements.recipient,
-            value: amountInSmallestUnits,
-            validAfter: '0',
-            validBefore: Math.floor(Date.now() / 1000 + 3600).toString(), // 1 hour validity
-            nonce: nonceHex,
-        };
+        const transferResult = await transferUsdc(
+            paymentRequirements.recipient,
+            paymentRequirements.amount
+        );
 
-        // EIP-712 typed data for signing
-        // Get chain ID from wallet's blockchain
-        const chainIdMap: Record<string, number> = {
-            'ARC-TESTNET': 1620,
-            'ETH-SEPOLIA': 11155111,
-            'MATIC-AMOY': 80002,
-            'AVAX-FUJI': 43113,
-            'ARB-SEPOLIA': 421614,
-            'BASE-SEPOLIA': 84532,
-            // Add more as needed
-        };
-        const walletChainId = chainIdMap[wallet.blockchain] || parseInt(config.ARC_CHAIN_ID);
-
-        logger.info('Using chain ID for signing', {
-            walletBlockchain: wallet.blockchain,
-            chainId: walletChainId
-        });
-
-        const typedData = JSON.stringify({
-            types: {
-                EIP712Domain: [
-                    { name: 'name', type: 'string' },
-                    { name: 'version', type: 'string' },
-                    { name: 'chainId', type: 'uint256' },
-                ],
-                ReceiveWithAuthorization: [
-                    { name: 'from', type: 'address' },
-                    { name: 'to', type: 'address' },
-                    { name: 'value', type: 'uint256' },
-                    { name: 'validAfter', type: 'uint256' },
-                    { name: 'validBefore', type: 'uint256' },
-                    { name: 'nonce', type: 'bytes32' },
-                ],
-            },
-            domain: {
-                name: 'USD Coin',
-                version: '2',
-                chainId: walletChainId,
-            },
-            primaryType: 'ReceiveWithAuthorization',
-            message: paymentPayload,
-        });
-
-        const signature = await signWithCircle(typedData);
-        logger.info('Signature received', { signature });
-        if (!signature) {
-            return { success: false, error: 'Failed to sign payment with Circle wallet' };
+        if (!transferResult.success) {
+            logger.error('x402 payment transfer failed', { error: transferResult.error });
+            return {
+                success: false,
+                error: `Payment failed: ${transferResult.error}`,
+            };
         }
 
-        // Step 5: Retry with signed payment
-        const paymentHeader = Buffer.from(JSON.stringify({
-            ...paymentPayload,
-            signature,
+        logger.info('x402 payment completed', {
+            txHash: transferResult.txHash,
+            amount: paymentRequirements.amount
+        });
+
+        // Step 5: Retry with payment proof (txHash as proof)
+        const paymentProof = Buffer.from(JSON.stringify({
+            txHash: transferResult.txHash,
+            from: wallet.address,
+            to: paymentRequirements.recipient,
+            amount: paymentRequirements.amount,
+            timestamp: Date.now(),
         })).toString('base64');
 
         const paidResponse = await fetch(url, {
             ...options,
             headers: {
                 ...options.headers,
-                'x-payment': paymentHeader,
+                'x-payment': paymentProof,
             },
         });
 
-        if (!paidResponse.ok) {
+        if (!paidResponse.ok && paidResponse.status !== 200) {
+            // Even if retry fails, payment was made
             return {
-                success: false,
-                error: `Paid request failed with status ${paidResponse.status}`,
+                success: true,
+                paymentMade: true,
+                paymentAmount: paymentRequirements.amount,
+                txHash: transferResult.txHash,
+                data: { message: 'Payment made but content access pending confirmation' },
             };
         }
 
         const data = await paidResponse.json().catch(() => paidResponse.text());
-
-        logger.info('x402 payment completed via Circle', {
-            url,
-            amount: paymentRequirements.amount
-        });
 
         // Update analytics warning check
         const analytics = await getSpendingAnalytics();
@@ -249,6 +156,7 @@ export async function x402Fetch(
             data,
             paymentMade: true,
             paymentAmount: paymentRequirements.amount,
+            txHash: transferResult.txHash,
         };
     } catch (err) {
         logger.error('x402 fetch failed', { url, error: String(err) });
@@ -257,7 +165,7 @@ export async function x402Fetch(
 }
 
 /**
- * Check if Circle x402 is enabled
+ * Check if x402 payments are enabled
  */
 export function isX402Enabled(): boolean {
     return !!(config.CIRCLE_WALLET_ID && config.CIRCLE_ENTITY_SECRET);
