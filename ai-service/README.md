@@ -11,10 +11,28 @@ This service contains:
 ## Setup
 
 ```bash
-npm install
-cp .env.example .env
-# Add your Gemini API key
-npm run dev
+# Create a virtual environment (optional but recommended)
+python -m venv .venv
+source .venv/bin/activate
+
+pip install -r requirements.txt
+# Update ai-service/.env with your Gemini API key
+python src/agent.py
+```
+
+## Tool Integration
+
+The AI service can call the backend APIs (treasury, policy, payments, vendors) via Gemini tools.
+Set `BACKEND_URL` in `ai-service/.env` (defaults to `http://localhost:3001`).
+
+## API Endpoints
+
+```
+POST /api/chats                   - Create a chat for a user
+GET  /api/users/:userId/chats     - List chats for a user
+GET  /api/chats/:chatId           - Get chat metadata
+GET  /api/chats/:chatId/messages  - List chat messages
+POST /api/chats/:chatId/messages  - Add a message (optionally generate reply)
 ```
 
 ## Integration with Backend

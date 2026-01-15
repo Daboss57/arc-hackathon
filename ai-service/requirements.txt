@@ -1,0 +1,5 @@
+fastapi
+httpx
+google-genai
+python-dotenv
+uvicorn
