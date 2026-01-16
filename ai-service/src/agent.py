@@ -37,7 +37,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "5. If a tool call fails, explain the error to the user."
 )
 
-MAX_TOOL_STEPS = int(os.getenv("MAX_TOOL_STEPS", "4"))
+MAX_TOOL_STEPS = int(os.getenv("MAX_TOOL_STEPS", "8"))  # Increased to allow search + purchase
 HTTP_TIMEOUT = float(os.getenv("BACKEND_TIMEOUT", "30"))
 
 HTTP_CLIENT = httpx.AsyncClient(timeout=HTTP_TIMEOUT)
@@ -87,14 +87,30 @@ function_tool = types.Tool(
         ),
         types.FunctionDeclaration(
             name="create_policy",
-            description="Create a new spending policy.",
+            description=(
+                "Create a new spending policy with rules. "
+                "Valid rule types are: "
+                "'maxPerTransaction' (params: {max: number}), "
+                "'dailyLimit' (params: {limit: number}), "
+                "'monthlyBudget' (params: {budget: number}), "
+                "'vendorWhitelist' (params: {addresses: string[]}), "
+                "'categoryLimit' (params: {limits: {category: number}}). "
+                "Each rule must have 'type' and 'params' fields."
+            ),
             parameters=schema_object(
                 {
-                    "name": {"type": "string"},
-                    "description": {"type": "string"},
+                    "name": {"type": "string", "description": "Name of the policy"},
+                    "description": {"type": "string", "description": "Description of what the policy does"},
                     "rules": {
                         "type": "array",
-                        "items": {"type": "object"},
+                        "description": "Array of rule objects. Each rule must have 'type' (string) and 'params' (object) fields.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {"type": "string", "description": "One of: maxPerTransaction, dailyLimit, monthlyBudget, vendorWhitelist, categoryLimit"},
+                                "params": {"type": "object", "description": "Parameters for the rule (e.g., {max: 0.15} for maxPerTransaction)"}
+                            }
+                        },
                     },
                 },
                 required=["name", "rules"],
@@ -709,7 +725,74 @@ async def generate_assistant_message(
     metadata = extract_metadata(response, include_thoughts)
     if executed_tools:
         metadata["executed_tools"] = executed_tools
-    return {"content": response.text or "", "metadata": metadata or None}
+
+    content = response.text or ""
+    
+    # If no text response but tools were executed, generate a summary
+    if not content and executed_tools:
+        failed_tools = [t for t in executed_tools if not t["result"].get("ok", True)]
+        successful_tools = [t for t in executed_tools if t["result"].get("ok", True)]
+        
+        parts = []
+        if failed_tools:
+            for tool in failed_tools:
+                error = tool["result"].get("error", "Unknown error")
+                # Convert error to string if it's a dict or other type
+                error_str = str(error) if not isinstance(error, str) else error
+                if "policy" in error_str.lower() or "blocked" in error_str.lower():
+                    parts.append(f"⚠️ Action blocked: {error_str}")
+                else:
+                    parts.append(f"❌ {tool['name']} failed: {error_str}")
+        
+        if successful_tools:
+            for tool in successful_tools:
+                data = tool["result"].get("data", {})
+                name = tool["name"]
+                
+                if not isinstance(data, dict):
+                    continue
+                    
+                # Handle purchase_product (x402 response)
+                if name == "purchase_product":
+                    if data.get("success"):
+                        order = data.get("order", {})
+                        product = order.get("product", {})
+                        parts.append(
+                            f"✅ Purchased **{product.get('name', 'item')}** for "
+                            f"**{product.get('price', '?')} USDC** from {order.get('vendor', 'vendor')}"
+                        )
+                    elif data.get("paymentMade"):
+                        parts.append(f"✅ Payment of {data.get('paymentAmount', '?')} USDC completed")
+                
+                # Handle balance queries
+                elif name == "get_treasury_balance":
+                    amount = data.get("amount", data.get("available"))
+                    if amount:
+                        parts.append(f"💰 Balance: **{amount} USDC**")
+                
+                # Handle vendor listings
+                elif name == "list_vendors":
+                    vendors = data.get("vendors", [])
+                    if vendors:
+                        parts.append(f"📋 Found {len(vendors)} vendors available")
+                
+                # Handle policy operations
+                elif name in ("create_policy", "update_policy", "delete_policy"):
+                    if name == "create_policy":
+                        parts.append(f"✅ Policy created: {data.get('name', 'unnamed')}")
+                    elif name == "delete_policy":
+                        parts.append("✅ Policy deleted successfully")
+                    else:
+                        parts.append(f"✅ Policy updated: {data.get('name', 'unnamed')}")
+        
+        if parts:
+            content = "\n".join(parts)
+        else:
+            # Last resort: summarize what tools ran
+            tool_names = [t["name"] for t in executed_tools]
+            content = f"Completed: {', '.join(tool_names)}. Expand '🔧 tools executed' for details."
+    
+    return {"content": content, "metadata": metadata or None}
 
 
 @app.get("/health")
