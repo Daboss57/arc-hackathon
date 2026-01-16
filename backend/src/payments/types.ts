@@ -30,6 +30,7 @@ export interface PaymentRequest {
     category?: string;
     description?: string;
     metadata?: Record<string, unknown>;
+    userId?: string;
 }
 
 export interface PaymentResult {

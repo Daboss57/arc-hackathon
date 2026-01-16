@@ -11,7 +11,9 @@ router.post('/execute', async (req, res) => {
         return res.status(400).json({ error: 'recipient and amount are required' });
     }
 
-    const result = await executePayment({ recipient, amount, category, description, metadata });
+    const userId = req.headers['x-user-id'] as string | undefined;
+
+    const result = await executePayment({ recipient, amount, category, description, metadata, userId });
 
     if (result.status === 'failed') {
         return res.status(400).json(result);
@@ -35,7 +37,8 @@ router.post('/x402/fetch', async (req, res) => {
             headers: headers || {},
             body: body ? JSON.stringify(body) : undefined,
         },
-        category
+        category,
+        req.headers['x-user-id'] as string | undefined
     );
 
     if (result.policyBlocked) {

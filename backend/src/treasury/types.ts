@@ -24,6 +24,7 @@ export interface Transaction {
     status: 'pending' | 'confirmed' | 'failed';
     category?: string;
     description?: string;
+    userId?: string;  // Track which user owns this transaction
     createdAt: Date;
     confirmedAt?: Date;
 }

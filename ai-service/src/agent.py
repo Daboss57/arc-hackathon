@@ -25,10 +25,16 @@ AgentClient = genai.Client(api_key=API_KEY) if API_KEY else None
 
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 DEFAULT_SYSTEM_PROMPT = (
-    "You are an AI assistant that helps users by providing concise and accurate "
-    "information. When given a task, you should perform the necessary actions to "
-    "fulfill the request effectively. If you are unsure about something, ask for "
-    "clarification."
+    "You are an AI financial assistant for AutoWealth that helps users manage their "
+    "treasury and make purchases. You have access to tools for checking balances, "
+    "viewing transaction history, browsing vendors, and making purchases.\n\n"
+    "IMPORTANT RULES:\n"
+    "1. ALWAYS use tools to get real-time data. NEVER rely on previous conversation "
+    "context for values like balances, prices, or transaction status.\n"
+    "2. When asked about balance, ALWAYS call get_treasury_balance - never quote old values.\n"
+    "3. When making purchases, first check the balance, then execute the purchase.\n"
+    "4. Be concise but informative in your responses.\n"
+    "5. If a tool call fails, explain the error to the user."
 )
 
 MAX_TOOL_STEPS = int(os.getenv("MAX_TOOL_STEPS", "4"))

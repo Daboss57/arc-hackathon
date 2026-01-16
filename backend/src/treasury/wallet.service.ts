@@ -193,7 +193,8 @@ async function getUsdcTokenId(): Promise<string | null> {
 
 export async function transferUsdc(
     destinationAddress: string,
-    amount: string
+    amount: string,
+    userId?: string
 ): Promise<TransferResult> {
     if (!config.CIRCLE_WALLET_ID) {
         return { success: false, error: 'Wallet not configured' };
@@ -211,7 +212,8 @@ export async function transferUsdc(
         logger.info('Initiating USDC transfer via Circle SDK', {
             destination: destinationAddress,
             amount,
-            tokenId
+            tokenId,
+            userId: userId || 'system'
         });
 
         const response = await client.createTransaction({
@@ -272,10 +274,14 @@ export async function recordTransaction(tx: Omit<Transaction, 'id' | 'createdAt'
     return transaction;
 }
 
-export async function getTransactionHistory(query: TransactionHistoryQuery = {}): Promise<Transaction[]> {
+export async function getTransactionHistory(query: TransactionHistoryQuery = {}, userId?: string): Promise<Transaction[]> {
     const { limit = 50, offset = 0, status } = query;
 
     let filtered = store.transactions;
+    if (userId) {
+        filtered = filtered.filter(tx => tx.userId === userId);
+    }
+
     if (status) {
         filtered = filtered.filter(tx => tx.status === status);
     }
@@ -316,12 +322,16 @@ export interface SpendingAnalytics {
     warning?: string;
 }
 
-export async function getSpendingAnalytics(): Promise<SpendingAnalytics> {
+export async function getSpendingAnalytics(userId?: string): Promise<SpendingAnalytics> {
     const now = new Date();
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const confirmedTxs = store.transactions.filter(tx => tx.status === 'confirmed');
+    // Filter by User ID if provided, otherwise show global Treasury stats
+    let confirmedTxs = store.transactions.filter(tx => tx.status === 'confirmed');
+    if (userId) {
+        confirmedTxs = confirmedTxs.filter(tx => tx.userId === userId);
+    }
 
     const dailySpend = confirmedTxs
         .filter(tx => tx.createdAt >= dayStart)

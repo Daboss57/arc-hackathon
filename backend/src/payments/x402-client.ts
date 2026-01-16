@@ -31,7 +31,8 @@ export interface X402FetchResult {
 export async function x402Fetch(
     url: string,
     options: RequestInit = {},
-    category?: string
+    category?: string,
+    userId?: string
 ): Promise<X402FetchResult> {
     const wallet = await getWallet();
     if (!wallet) {
@@ -72,7 +73,8 @@ export async function x402Fetch(
         logger.info('402 Payment Required (Circle x402)', {
             url,
             amount: paymentRequirements.amount,
-            recipient: paymentRequirements.recipient
+            recipient: paymentRequirements.recipient,
+            userId
         });
 
         // Step 3: Validate against policies
@@ -81,6 +83,7 @@ export async function x402Fetch(
             recipient: paymentRequirements.recipient || new URL(url).hostname,
             category: category || 'x402-api',
             description: `x402 payment for ${url}`,
+            metadata: { userId },
         });
 
         if (!policyCheck.approved) {
@@ -99,7 +102,8 @@ export async function x402Fetch(
 
         const transferResult = await transferUsdc(
             paymentRequirements.recipient,
-            paymentRequirements.amount
+            paymentRequirements.amount,
+            userId
         );
 
         if (!transferResult.success) {
@@ -122,6 +126,7 @@ export async function x402Fetch(
             to: paymentRequirements.recipient,
             amount: paymentRequirements.amount,
             timestamp: Date.now(),
+            userId
         })).toString('base64');
 
         const paidResponse = await fetch(url, {
@@ -146,7 +151,7 @@ export async function x402Fetch(
         const data = await paidResponse.json().catch(() => paidResponse.text());
 
         // Update analytics warning check
-        const analytics = await getSpendingAnalytics();
+        const analytics = await getSpendingAnalytics(userId);
         if (analytics.warning) {
             logger.warn(analytics.warning);
         }

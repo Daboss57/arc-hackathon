@@ -68,11 +68,12 @@ export async function executePayment(request: PaymentRequest): Promise<PaymentRe
         status: 'pending',
         category: request.category,
         description: request.description,
+        userId: request.userId,
     });
 
     try {
         // Execute real USDC transfer via Circle
-        const transfer = await transferUsdc(request.recipient, request.amount);
+        const transfer = await transferUsdc(request.recipient, request.amount, request.userId);
 
         if (!transfer.success) {
             await releaseFunds(request.amount);

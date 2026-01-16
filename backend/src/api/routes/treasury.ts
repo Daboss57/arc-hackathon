@@ -16,7 +16,8 @@ router.get('/history', async (req, res) => {
     try {
         const limit = parseInt(req.query.limit as string) || 50;
         const offset = parseInt(req.query.offset as string) || 0;
-        const history = await getTransactionHistory({ limit, offset });
+        const userId = req.headers['x-user-id'] as string | undefined;
+        const history = await getTransactionHistory({ limit, offset }, userId);
         res.json({ transactions: history, limit, offset });
     } catch (err) {
         res.status(500).json({ error: String(err) });
@@ -46,7 +47,8 @@ router.post('/wallet/init', async (_req, res) => {
 
 router.get('/analytics', async (_req, res) => {
     try {
-        const analytics = await getSpendingAnalytics();
+        const userId = req.headers['x-user-id'] as string | undefined;
+        const analytics = await getSpendingAnalytics(userId);
         res.json(analytics);
     } catch (err) {
         res.status(500).json({ error: String(err) });

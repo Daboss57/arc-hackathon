@@ -3,3 +3,5 @@ httpx
 google-genai
 python-dotenv
 uvicorn
+pytest
+pytest-asyncio
