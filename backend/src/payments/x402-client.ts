@@ -7,7 +7,7 @@
 import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
 import { validatePayment } from '../policy/engine.js';
-import { getSpendingAnalytics, getWallet, transferUsdc } from '../treasury/wallet.service.js';
+import { getSpendingAnalytics, getWallet, transferUsdc, recordTransaction } from '../treasury/wallet.service.js';
 
 export interface X402FetchResult {
     success: boolean;
@@ -114,7 +114,19 @@ export async function x402Fetch(
             };
         }
 
-        logger.info('x402 payment completed', {
+        // Record the transaction for analytics
+        await recordTransaction({
+            type: 'x402-payment',
+            amount: paymentRequirements.amount,
+            recipient: paymentRequirements.recipient,
+            txHash: transferResult.txHash,
+            status: 'confirmed',
+            category: category || 'x402-api',
+            description: `x402 payment for ${new URL(url).pathname}`,
+            userId,
+        });
+
+        logger.info('x402 payment completed and recorded', {
             txHash: transferResult.txHash,
             amount: paymentRequirements.amount
         });

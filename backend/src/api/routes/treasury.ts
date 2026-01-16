@@ -45,7 +45,7 @@ router.post('/wallet/init', async (_req, res) => {
     }
 });
 
-router.get('/analytics', async (_req, res) => {
+router.get('/analytics', async (req, res) => {
     try {
         const userId = req.headers['x-user-id'] as string | undefined;
         const analytics = await getSpendingAnalytics(userId);

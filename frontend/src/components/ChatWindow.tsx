@@ -3,6 +3,7 @@ import { createChat, sendMessage, type Message } from '../api/aiService';
 import { BalanceDisplay } from './BalanceDisplay';
 import { MessageInput } from './MessageInput';
 import { MessageList } from './MessageList';
+import { QuickActions } from './QuickActions';
 
 const USER_ID = 'demo-user';
 
@@ -61,11 +62,7 @@ export function ChatWindow() {
             });
 
             // Refresh balance after any transaction-related message
-            if (content.toLowerCase().includes('buy') ||
-                content.toLowerCase().includes('purchase') ||
-                content.toLowerCase().includes('balance')) {
-                setRefreshTrigger((t) => t + 1);
-            }
+            setRefreshTrigger((t) => t + 1);
         } catch (err) {
             setError('Failed to send message. Check if services are running.');
             console.error(err);
@@ -86,6 +83,8 @@ export function ChatWindow() {
                 <BalanceDisplay refreshTrigger={refreshTrigger} />
             </header>
 
+            <QuickActions onAction={handleSend} disabled={isLoading || !chatId} />
+
             {error && (
                 <div className="error-banner">
                     <span>⚠️ {error}</span>
@@ -94,7 +93,11 @@ export function ChatWindow() {
             )}
 
             <main className="chat-main">
-                <MessageList messages={messages} isLoading={isLoading} />
+                <MessageList
+                    messages={messages}
+                    isLoading={isLoading}
+                    onSuggestionClick={handleSend}
+                />
                 <div ref={messagesEndRef} />
             </main>
 
