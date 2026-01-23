@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createChat, deleteChat, getMessages, listChats, sendMessageStream, type Chat, type Message } from '../api/aiService';
+import { createChat, deleteChat, getMessages, listChats, renameChat, sendMessageStream, type Chat, type Message } from '../api/aiService';
 import { BalanceDisplay } from './BalanceDisplay';
 import { MessageInput } from './MessageInput';
 import { MessageList } from './MessageList';
@@ -73,7 +73,19 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
             }
             try {
                 const history = await getMessages(chatId);
-                setMessagesByChat((prev) => ({ ...prev, [chatId]: history }));
+                setMessagesByChat((prev) => {
+                    const existing = prev[chatId] ?? [];
+                    if (existing.length === 0) {
+                        return { ...prev, [chatId]: history };
+                    }
+                    const merged = new Map<string, Message>();
+                    existing.forEach((msg) => merged.set(msg.id, msg));
+                    history.forEach((msg) => merged.set(msg.id, msg));
+                    const combined = Array.from(merged.values()).sort((a, b) =>
+                        a.created_at.localeCompare(b.created_at)
+                    );
+                    return { ...prev, [chatId]: combined };
+                });
                 localStorage.setItem(`autowealth-active-chat:${userId}`, chatId);
                 setError(null);
             } catch (err) {
@@ -119,6 +131,15 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
         },
         [chatId, userId]
     );
+
+    const handleRenameChat = useCallback(async (id: string, title: string) => {
+        try {
+            const updated = await renameChat(id, title);
+            setChats((prev) => prev.map((chat) => (chat.id === id ? { ...chat, ...updated } : chat)));
+        } catch (err) {
+            setError('Failed to rename chat.');
+        }
+    }, []);
 
     const refreshChatList = useCallback(async () => {
         try {
@@ -256,15 +277,6 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
                 <BalanceDisplay refreshTrigger={refreshKey} />
             </header>
 
-            <div className="product-banner">
-                <div className="use-case">
-                    <span className="tag">Focus Use Case</span>
-                    <strong>Keep AI API spend under a monthly budget while the agent pays per-use.</strong>
-                    <span className="muted">Advisor proposes limits → you approve → policy enforces every payment.</span>
-                    <span className="muted">Tracks: Trustless Agent • Micropayments • Autonomous Commerce</span>
-                </div>
-            </div>
-
             <div className="workspace">
                 <section className="chat-panel">
                     <div className="chat-layout">
@@ -274,6 +286,7 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
                             onSelect={setChatId}
                             onCreate={handleCreateChat}
                             onDelete={handleDeleteChat}
+                            onRename={handleRenameChat}
                         />
                         <div className="chat-content">
                             <QuickActions onAction={handleSend} disabled={isLoading} />

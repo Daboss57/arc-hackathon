@@ -159,6 +159,16 @@ export async function deleteChat(chatId: string): Promise<void> {
     if (!response.ok) throw new Error('Failed to delete chat');
 }
 
+export async function renameChat(chatId: string, title: string): Promise<Chat> {
+    const response = await fetch(`${AI_SERVICE_URL}/api/chats/${chatId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+    });
+    if (!response.ok) throw new Error('Failed to rename chat');
+    return response.json();
+}
+
 export async function sendMessage(
     chatId: string,
     content: string

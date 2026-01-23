@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import type { Chat } from '../api/aiService';
 
 interface ChatListProps {
@@ -6,9 +7,34 @@ interface ChatListProps {
     onSelect: (chatId: string) => void;
     onCreate: () => void;
     onDelete: (chatId: string) => void;
+    onRename: (chatId: string, title: string) => void;
 }
 
-export function ChatList({ chats, activeChatId, onSelect, onCreate, onDelete }: ChatListProps) {
+export function ChatList({ chats, activeChatId, onSelect, onCreate, onDelete, onRename }: ChatListProps) {
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [renameValue, setRenameValue] = useState<string>('');
+    const menuRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (!openMenuId) return;
+        const handleClickOutside = (event: MouseEvent) => {
+            if (!menuRef.current) return;
+            if (!menuRef.current.contains(event.target as Node)) {
+                setOpenMenuId(null);
+                setRenameValue('');
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [openMenuId]);
+
+    const handleRenameSubmit = (chatId: string) => {
+        const value = renameValue.trim();
+        if (!value) return;
+        onRename(chatId, value);
+        setOpenMenuId(null);
+        setRenameValue('');
+    };
     return (
         <div className="chat-list-panel">
             <div className="chat-list-header">
@@ -40,7 +66,8 @@ export function ChatList({ chats, activeChatId, onSelect, onCreate, onDelete }: 
                                 aria-label="Chat options"
                                 onClick={(event) => {
                                     event.stopPropagation();
-                                    onDelete(chat.id);
+                                    setOpenMenuId((prev) => (prev === chat.id ? null : chat.id));
+                                    setRenameValue(chat.title || '');
                                 }}
                             >
                                 ⋯
@@ -49,6 +76,55 @@ export function ChatList({ chats, activeChatId, onSelect, onCreate, onDelete }: 
                         <span className="chat-meta">
                             {chat.updated_at ? new Date(chat.updated_at).toLocaleDateString() : '—'}
                         </span>
+                        {openMenuId === chat.id && (
+                            <div
+                                ref={menuRef}
+                                className="chat-menu"
+                                onClick={(event) => event.stopPropagation()}
+                            >
+                                <label className="chat-menu-label">
+                                    Rename
+                                    <input
+                                        type="text"
+                                        value={renameValue}
+                                        onChange={(event) => setRenameValue(event.target.value)}
+                                        onKeyDown={(event) => {
+                                            if (event.key === 'Enter') {
+                                                event.preventDefault();
+                                                handleRenameSubmit(chat.id);
+                                            }
+                                        }}
+                                    />
+                                </label>
+                                <div className="chat-menu-actions">
+                                    <button
+                                        className="btn btn-secondary small"
+                                        onClick={() => handleRenameSubmit(chat.id)}
+                                    >
+                                        Save
+                                    </button>
+                                    <button
+                                        className="btn btn-secondary small"
+                                        onClick={() => {
+                                            setOpenMenuId(null);
+                                            setRenameValue('');
+                                        }}
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                                <button
+                                    className="btn btn-danger small"
+                                    onClick={() => {
+                                        setOpenMenuId(null);
+                                        setRenameValue('');
+                                        onDelete(chat.id);
+                                    }}
+                                >
+                                    Delete chat
+                                </button>
+                            </div>
+                        )}
                     </div>
                 ))}
                 {chats.length === 0 && <span className="panel-muted">No chats yet.</span>}

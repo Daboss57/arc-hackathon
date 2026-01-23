@@ -102,12 +102,14 @@ export function PolicyCockpit({ refreshKey, onPolicyChange }: PolicyCockpitProps
                                     </span>
                                 )}
                             </div>
-                            <button
-                                className={`toggle-btn ${policy.enabled ? 'on' : 'off'}`}
-                                onClick={() => handleToggle(policy)}
-                            >
-                                {policy.enabled ? 'Enabled' : 'Disabled'}
-                            </button>
+                            <label className="toggle-row inline policy-toggle">
+                                <span>{policy.enabled ? 'Enabled' : 'Disabled'}</span>
+                                <input
+                                    type="checkbox"
+                                    checked={policy.enabled}
+                                    onChange={() => handleToggle(policy)}
+                                />
+                            </label>
                         </div>
                         <div className="policy-rules">
                             {rules.map((rule, index) => (

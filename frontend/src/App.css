@@ -286,41 +286,6 @@ body {
   display: block;
 }
 
-/* Product Banner */
-.product-banner {
-  padding: 12px 24px;
-  background: rgba(99, 102, 241, 0.08);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.use-case {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 0.85rem;
-}
-
-.use-case .tag {
-  width: fit-content;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(99, 102, 241, 0.2);
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  color: var(--text-primary);
-}
-
-.use-case strong {
-  color: var(--text-primary);
-}
-
-.use-case .muted {
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-}
-
 /* Workspace layout */
 .workspace {
   flex: 1;
@@ -399,6 +364,7 @@ body {
   border-radius: 10px;
   color: var(--text-secondary);
   cursor: pointer;
+  position: relative;
 }
 
 .chat-list-item-header {
@@ -433,6 +399,42 @@ body {
 .chat-menu-btn:hover {
   color: var(--text-primary);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.chat-menu {
+  position: absolute;
+  top: 6px;
+  left: calc(100% + 10px);
+  width: 200px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(20, 20, 28, 0.96);
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 20;
+}
+
+.chat-menu-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.chat-menu-label input {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.chat-menu-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .chat-meta {
@@ -1129,6 +1131,12 @@ body {
   color: var(--text-primary);
 }
 
+.btn-danger {
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fecaca;
+}
+
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -1168,6 +1176,16 @@ body {
 .toggle-row.inline {
   justify-content: flex-start;
   gap: 8px;
+}
+
+.policy-toggle {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.policy-toggle span {
+  min-width: 60px;
+  text-align: right;
 }
 
 .toggle-row input[type='checkbox'] {

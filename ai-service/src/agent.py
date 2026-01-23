@@ -316,6 +316,10 @@ class ChatResponse(BaseModel):
     updated_at: str
 
 
+class ChatUpdateRequest(BaseModel):
+    title: Optional[str] = None
+
+
 class MessageCreateRequest(BaseModel):
     content: str = Field(..., min_length=1)
     role: Literal["user", "assistant", "system"] = "user"
@@ -499,6 +503,29 @@ async def db_list_messages(chat_id: str, limit: Optional[int] = None) -> List[Di
     if limit:
         rows.reverse()
     return rows
+
+
+async def db_list_messages_first(chat_id: str, limit: int = 2) -> List[Dict[str, Any]]:
+    query = (
+        SUPABASE_CLIENT.table("chat_messages")
+        .select("*")
+        .eq("chat_id", chat_id)
+        .order("created_at", desc=False)
+        .limit(limit)
+    )
+    data = await supabase_exec(lambda: query.execute())
+    if not data:
+        return []
+    return [
+        {
+            "id": row["id"],
+            "role": row["role"],
+            "content": row["content"],
+            "created_at": row.get("created_at") or now_iso(),
+            "metadata": row.get("metadata"),
+        }
+        for row in data
+    ]
 
 
 async def db_get_first_user_message(chat_id: str) -> str:
@@ -1000,14 +1027,30 @@ async def generate_assistant_message(
     return {"content": content, "metadata": metadata or None}
 
 
-async def generate_chat_title(message_text: str, model: str) -> str:
-    if not AgentClient:
-        return message_text[:40].strip() or "New Chat"
+def _unique_title(candidate: str, existing_titles: List[str]) -> str:
+    cleaned = candidate.strip() or "AutoWealth Session"
+    existing = {title.lower() for title in existing_titles if title}
+    if cleaned.lower() not in existing:
+        return cleaned
+    for idx in range(2, 10):
+        alt = f"{cleaned} {idx}"
+        if alt.lower() not in existing:
+            return alt
+    return f"{cleaned} {uuid.uuid4().hex[:4]}"
 
+
+async def generate_chat_title(context_text: str, existing_titles: List[str], model: str) -> str:
+    if not AgentClient:
+        return _unique_title(context_text[:40].strip() or "New Chat", existing_titles)
+
+    existing_text = ", ".join([t for t in existing_titles if t]) or "None"
     prompt = (
         "Create a short 3-5 word title summarizing this conversation. "
-        "Use title case. Do not copy the user's words verbatim. No quotes.\n\n"
-        f"Conversation: {message_text}"
+        "Use title case. Avoid generic titles like 'Auto', 'Chat', 'Session', or 'Conversation'. "
+        "Avoid duplicating or closely matching existing titles. "
+        "Do not copy the user's words verbatim. No quotes.\n\n"
+        f"Existing titles: {existing_text}\n"
+        f"Conversation excerpt:\n{context_text}"
     )
     response = await asyncio.to_thread(
         AgentClient.models.generate_content,
@@ -1020,21 +1063,38 @@ async def generate_chat_title(message_text: str, model: str) -> str:
     )
     title = extract_text(response)
     if not title:
-        return message_text[:40].strip() or "New Chat"
+        return _unique_title(context_text[:40].strip() or "New Chat", existing_titles)
     cleaned = title.replace('"', '').replace("'", '').strip()
     if cleaned.lower().startswith("user:"):
         cleaned = cleaned.split("user:", 1)[-1].strip()
     if "assistant:" in cleaned.lower():
         parts = cleaned.split("assistant:", 1)
         cleaned = parts[0].strip()
-    if cleaned.lower() == message_text.strip().lower():
-        return "AutoWealth Session"
-    return cleaned[:60]
+    if cleaned.lower() == context_text.strip().lower():
+        cleaned = "AutoWealth Session"
+    return _unique_title(cleaned[:60], existing_titles)
 
 
-async def maybe_set_chat_title(chat_id: str, seed_text: str, model: str) -> None:
-    if not seed_text:
-        return
+async def build_title_context(chat_id: str, assistant_text: Optional[str]) -> Tuple[str, List[str]]:
+    chat = await db_get_chat(chat_id)
+    if not chat:
+        return "", []
+    chats = await db_list_chats(chat["user_id"])
+    titles = [c.get("title") for c in chats if c.get("title")]
+    early_messages = await db_list_messages_first(chat_id, limit=2)
+    lines: List[str] = []
+    for msg in early_messages:
+        role = str(msg.get("role") or "").capitalize()
+        content = str(msg.get("content") or "").strip()
+        if content:
+            lines.append(f"{role}: {content}")
+    if assistant_text and (not lines or not lines[-1].lower().startswith("assistant:")):
+        lines.append(f"Assistant: {assistant_text.strip()}")
+    context = "\n".join(lines).strip()
+    return context[:800], [t for t in titles if t]
+
+
+async def maybe_set_chat_title(chat_id: str, assistant_text: Optional[str], model: str) -> None:
     chat = await db_get_chat(chat_id)
     if not chat:
         return
@@ -1049,12 +1109,14 @@ async def maybe_set_chat_title(chat_id: str, seed_text: str, model: str) -> None
     if existing_title and not placeholder:
         return
 
-    title = await generate_chat_title(seed_text, model)
+    context, titles = await build_title_context(chat_id, assistant_text)
+    if not context:
+        return
+    title = await generate_chat_title(context, titles, model)
     chat = await db_get_chat(chat_id)
     if not chat:
         return
     existing_title = (chat.get("title") or "").strip()
-    first_user = await db_get_first_user_message(chat_id)
     existing_lower = existing_title.lower()
     placeholder = (
         existing_lower in ("new chat", first_user.lower())
@@ -1064,20 +1126,6 @@ async def maybe_set_chat_title(chat_id: str, seed_text: str, model: str) -> None
     if existing_title and not placeholder:
         return
     await db_update_chat(chat_id, {"title": title, "updated_at": now_iso()})
-
-
-def build_title_seed(messages: List[Dict[str, Any]], assistant_text: Optional[str]) -> str:
-    user_text = ""
-    for msg in messages:
-        if msg.get("role") == "user" and msg.get("content"):
-            user_text = str(msg.get("content")).strip()
-            break
-    assistant_snippet = (assistant_text or "").strip()
-    if assistant_snippet:
-        seed = f"{user_text}. {assistant_snippet}"
-    else:
-        seed = user_text
-    return seed[:400]
 
 
 ## Streaming helper is implemented inline in the SSE endpoint to avoid returning values from an async generator.
@@ -1118,6 +1166,23 @@ async def get_chat(chat_id: str) -> Dict[str, Any]:
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found.")
     return chat
+
+
+@app.patch("/api/chats/{chat_id}", response_model=ChatResponse)
+async def update_chat(chat_id: str, request: ChatUpdateRequest) -> Dict[str, Any]:
+    chat = await db_get_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    updates: Dict[str, Any] = {}
+    if request.title is not None:
+        updates["title"] = request.title
+        updates["updated_at"] = now_iso()
+    if updates:
+        await db_update_chat(chat_id, updates)
+    updated = await db_get_chat(chat_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    return updated
 
 
 @app.delete("/api/chats/{chat_id}")
@@ -1171,9 +1236,7 @@ async def create_message(
         assistant_message = build_message("assistant", assistant["content"], assistant["metadata"])
         await db_insert_message(chat_id, chat["user_id"], assistant_message)
         await db_update_chat(chat_id, {"updated_at": assistant_message["created_at"]})
-        if message_snapshot:
-            seed_text = build_title_seed(message_snapshot, assistant["content"])
-            await maybe_set_chat_title(chat_id, seed_text, model)
+        await maybe_set_chat_title(chat_id, assistant["content"], model)
 
     return {
         "chat_id": chat_id,
@@ -1285,9 +1348,7 @@ async def create_message_stream(
 
         yield f"data: {json.dumps({'type': 'done', 'message': assistant_message})}\n\n"
 
-        if message_snapshot:
-            seed_text = build_title_seed(message_snapshot, full_text)
-            await maybe_set_chat_title(chat_id, seed_text, model)
+        await maybe_set_chat_title(chat_id, full_text, model)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
