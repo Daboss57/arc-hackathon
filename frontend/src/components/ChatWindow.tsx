@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createChat, getMessages, listChats, sendMessageStream, type Chat, type Message } from '../api/aiService';
+import { createChat, deleteChat, getMessages, listChats, sendMessageStream, type Chat, type Message } from '../api/aiService';
 import { BalanceDisplay } from './BalanceDisplay';
 import { MessageInput } from './MessageInput';
 import { MessageList } from './MessageList';
@@ -22,12 +22,24 @@ interface ChatWindowProps {
 
 export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
     const [chatId, setChatId] = useState<string | null>(null);
-    const [messages, setMessages] = useState<Message[]>([]);
+    const [messagesByChat, setMessagesByChat] = useState<Record<string, Message[]>>({});
     const [chats, setChats] = useState<Chat[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+    const [streamingChatId, setStreamingChatId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [refreshKey, setRefreshKey] = useState(0);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const streamingIdRef = useRef<string | null>(null);
+
+    const activeMessages = chatId ? messagesByChat[chatId] ?? [] : [];
+    const updateMessagesForChat = useCallback((targetChatId: string, updater: (prev: Message[]) => Message[]) => {
+        setMessagesByChat((prev) => {
+            const current = prev[targetChatId] ?? [];
+            const next = updater(current);
+            return { ...prev, [targetChatId]: next };
+        });
+    }, []);
 
     // Initialize chats on mount
     useEffect(() => {
@@ -44,9 +56,7 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
                 } else if (list.length > 0) {
                     setChatId(list[0].id);
                 } else {
-                    const chat = await createChat(userId);
-                    setChatId(chat.id);
-                    setChats([chat]);
+                    setChatId(null);
                 }
             } catch (err) {
                 setError('Failed to initialize chat. Make sure the AI service is running on port 3002.');
@@ -58,10 +68,12 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
 
     useEffect(() => {
         const loadMessages = async () => {
-            if (!chatId) return;
+            if (!chatId) {
+                return;
+            }
             try {
                 const history = await getMessages(chatId);
-                setMessages(history);
+                setMessagesByChat((prev) => ({ ...prev, [chatId]: history }));
                 localStorage.setItem(`autowealth-active-chat:${userId}`, chatId);
                 setError(null);
             } catch (err) {
@@ -82,6 +94,32 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
         }
     }, [userId]);
 
+    const handleDeleteChat = useCallback(
+        async (id: string) => {
+            const shouldDelete = window.confirm('Delete this chat? This cannot be undone.');
+            if (!shouldDelete) return;
+            try {
+                await deleteChat(id);
+                let nextChats: Chat[] = [];
+                setChats((prev) => {
+                    nextChats = prev.filter((chat) => chat.id !== id);
+                    return nextChats;
+                });
+                if (chatId === id) {
+                    localStorage.removeItem(`autowealth-active-chat:${userId}`);
+                    if (nextChats.length > 0) {
+                        setChatId(nextChats[0].id);
+                    } else {
+                        setChatId(null);
+                    }
+                }
+            } catch (err) {
+                setError('Failed to delete chat.');
+            }
+        },
+        [chatId, userId]
+    );
+
     const refreshChatList = useCallback(async () => {
         try {
             const list = await listChats(userId);
@@ -95,10 +133,24 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
     // Scroll to bottom when messages change
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+    }, [activeMessages]);
 
     const handleSend = useCallback(async (content: string) => {
-        if (!chatId || isLoading) return;
+        if (isLoading) return;
+
+        let activeChatId = chatId;
+        if (!activeChatId) {
+            try {
+                const chat = await createChat(userId);
+                activeChatId = chat.id;
+                setChats((prev) => [chat, ...prev]);
+                setChatId(chat.id);
+                setMessagesByChat((prev) => ({ ...prev, [chat.id]: [] }));
+            } catch (err) {
+                setError('Failed to create a new chat.');
+                return;
+            }
+        }
 
         // Add user message immediately
         const tempUserMessage: Message = {
@@ -107,59 +159,92 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
             content,
             created_at: new Date().toISOString(),
         };
-        const tempAssistantMessage: Message = {
-            id: `stream-${Date.now()}`,
-            role: 'assistant',
-            content: '',
-            created_at: new Date().toISOString(),
-        };
-        setMessages((prev) => [...prev, tempUserMessage, tempAssistantMessage]);
+        updateMessagesForChat(activeChatId, (prev) => [...prev, tempUserMessage]);
         setIsLoading(true);
+        setStreamingMessageId(null);
+        setStreamingChatId(activeChatId);
+        streamingIdRef.current = null;
         setError(null);
 
         try {
-            const stream = await sendMessageStream(chatId, content);
+            const stream = await sendMessageStream(activeChatId, content);
             for await (const event of stream) {
                 if (event.type === 'ack') {
-                    setMessages((prev) =>
+                    updateMessagesForChat(activeChatId, (prev) =>
                         prev.map((msg) => (msg.id === tempUserMessage.id ? event.message : msg))
                     );
                 }
                 if (event.type === 'delta') {
-                    setMessages((prev) =>
-                        prev.map((msg) =>
-                            msg.id === tempAssistantMessage.id
-                                ? { ...msg, content: msg.content + event.text }
-                                : msg
-                        )
-                    );
+                    if (!streamingIdRef.current) {
+                        const draftId = `stream-${Date.now()}`;
+                        streamingIdRef.current = draftId;
+                        setStreamingMessageId(draftId);
+                        updateMessagesForChat(activeChatId, (prev) => [
+                            ...prev,
+                            {
+                                id: draftId,
+                                role: 'assistant',
+                                content: event.text,
+                                created_at: new Date().toISOString(),
+                            },
+                        ]);
+                    } else {
+                        const currentId = streamingIdRef.current;
+                        updateMessagesForChat(activeChatId, (prev) =>
+                            prev.map((msg) =>
+                                msg.id === currentId
+                                    ? { ...msg, content: msg.content + event.text }
+                                    : msg
+                            )
+                        );
+                    }
                 }
                 if (event.type === 'done') {
-                    setMessages((prev) =>
-                        prev.map((msg) =>
-                            msg.id === tempAssistantMessage.id ? event.message : msg
-                        )
-                    );
+                    const currentId = streamingIdRef.current;
+                    if (currentId) {
+                        updateMessagesForChat(activeChatId, (prev) =>
+                            prev.map((msg) =>
+                                msg.id === currentId ? event.message : msg
+                            )
+                        );
+                    } else {
+                        updateMessagesForChat(activeChatId, (prev) => [...prev, event.message]);
+                    }
+                    streamingIdRef.current = null;
+                    setStreamingMessageId(null);
+                    setStreamingChatId(null);
                     setRefreshKey((t) => t + 1);
                     refreshChatList();
                     break;
                 }
                 if (event.type === 'error') {
                     setError(event.error);
-                    setMessages((prev) => prev.filter((msg) => msg.id !== tempAssistantMessage.id));
+                    const currentId = streamingIdRef.current;
+                    if (currentId) {
+                        updateMessagesForChat(activeChatId, (prev) =>
+                            prev.filter((msg) => msg.id !== currentId)
+                        );
+                    }
+                    streamingIdRef.current = null;
+                    setStreamingMessageId(null);
+                    setStreamingChatId(null);
                     break;
                 }
             }
         } catch (err) {
             setError('Failed to send message. Check if services are running.');
             console.error(err);
-            setMessages((prev) =>
-                prev.filter((m) => m.id !== tempUserMessage.id && m.id !== tempAssistantMessage.id)
+            const currentId = streamingIdRef.current;
+            updateMessagesForChat(activeChatId, (prev) =>
+                prev.filter((m) => m.id !== tempUserMessage.id && m.id !== currentId)
             );
+            streamingIdRef.current = null;
+            setStreamingMessageId(null);
+            setStreamingChatId(null);
         } finally {
             setIsLoading(false);
         }
-    }, [chatId, isLoading]);
+    }, [chatId, isLoading, refreshChatList, updateMessagesForChat, userId]);
 
     return (
         <div className="chat-window">
@@ -188,9 +273,10 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
                             activeChatId={chatId}
                             onSelect={setChatId}
                             onCreate={handleCreateChat}
+                            onDelete={handleDeleteChat}
                         />
                         <div className="chat-content">
-                            <QuickActions onAction={handleSend} disabled={isLoading || !chatId} />
+                            <QuickActions onAction={handleSend} disabled={isLoading} />
 
                             {error && (
                                 <div className="error-banner">
@@ -201,15 +287,16 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
 
                             <main className="chat-main">
                                 <MessageList
-                                    messages={messages}
+                                    messages={activeMessages}
                                     isLoading={isLoading}
+                                    showTyping={isLoading && streamingChatId === chatId && !streamingMessageId}
                                     onSuggestionClick={handleSend}
                                 />
                                 <div ref={messagesEndRef} />
                             </main>
 
                             <footer className="chat-footer">
-                                <MessageInput onSend={handleSend} disabled={isLoading || !chatId} />
+                                <MessageInput onSend={handleSend} disabled={isLoading} />
                             </footer>
                         </div>
                     </div>

@@ -1,5 +1,8 @@
-export const AI_SERVICE_URL = 'http://localhost:3002';
-export const BACKEND_URL = 'http://localhost:3001';
+const DEFAULT_AI_URL = import.meta.env.DEV ? 'http://localhost:3002' : '';
+const DEFAULT_BACKEND_URL = import.meta.env.DEV ? 'http://localhost:3001' : '';
+
+export const AI_SERVICE_URL = (import.meta.env.VITE_AI_SERVICE_URL as string | undefined) ?? DEFAULT_AI_URL;
+export const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined) ?? DEFAULT_BACKEND_URL;
 
 export interface Chat {
     id: string;
@@ -149,6 +152,13 @@ export async function listChats(userId: string): Promise<Chat[]> {
     return response.json();
 }
 
+export async function deleteChat(chatId: string): Promise<void> {
+    const response = await fetch(`${AI_SERVICE_URL}/api/chats/${chatId}`, {
+        method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete chat');
+}
+
 export async function sendMessage(
     chatId: string,
     content: string
@@ -194,17 +204,34 @@ export async function sendMessageStream(
     let buffer = '';
 
     async function* stream() {
+        const timeoutMs = 45000;
         while (true) {
-            const { value, done } = await reader.read();
+            const result = await Promise.race([
+                reader.read(),
+                new Promise<{ timeout: true }>((resolve) =>
+                    setTimeout(() => resolve({ timeout: true }), timeoutMs)
+                ),
+            ]);
+            if ('timeout' in result) {
+                yield { type: 'error', error: 'Stream timed out. Please try again.' } as StreamEvent;
+                try {
+                    await reader.cancel();
+                } catch {
+                    // ignore
+                }
+                break;
+            }
+            const { value, done } = result;
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
+            buffer = buffer.replace(/\r\n/g, '\n');
             const chunks = buffer.split('\n\n');
             buffer = chunks.pop() || '';
 
             for (const chunk of chunks) {
-                const line = chunk.split('\n').find((l) => l.startsWith('data:'));
-                if (!line) continue;
-                const data = line.replace(/^data:\s?/, '');
+                const lines = chunk.split('\n').filter((l) => l.startsWith('data:'));
+                if (lines.length === 0) continue;
+                const data = lines.map((line) => line.replace(/^data:\s?/, '')).join('\n');
                 try {
                     const event = JSON.parse(data) as StreamEvent;
                     yield event;

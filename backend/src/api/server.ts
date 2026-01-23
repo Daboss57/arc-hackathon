@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
 import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
 import { initializeWallet, hydrateTransactionsFromStore } from '../treasury/wallet.service.js';
@@ -23,6 +25,23 @@ app.use('/api/vendors', vendorRoutes);
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+if (config.SERVE_FRONTEND) {
+    const distPath = config.FRONTEND_DIST
+        ? path.resolve(config.FRONTEND_DIST)
+        : path.resolve(__dirname, '../../..', 'frontend', 'dist');
+    if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+        app.get('*', (req, res, next) => {
+            if (req.path.startsWith('/api') || req.path.startsWith('/health')) {
+                return next();
+            }
+            res.sendFile(path.join(distPath, 'index.html'));
+        });
+    } else {
+        logger.warn('Frontend dist not found; skipping static hosting', { distPath });
+    }
+}
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     logger.error('Unhandled error', { error: err.message });

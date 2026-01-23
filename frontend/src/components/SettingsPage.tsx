@@ -89,8 +89,8 @@ export function SettingsPage({ userId, userEmail, settings: initialSettings, onS
                     UI scale
                     <input
                         type="range"
-                        min="0.9"
-                        max="1.3"
+                        min="0.75"
+                        max="1.5"
                         step="0.05"
                         value={settings.ui_scale ?? 1}
                         onChange={(e) => {

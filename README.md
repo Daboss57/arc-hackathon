@@ -80,6 +80,13 @@ cp frontend/.env.example frontend/.env
 
 # Fill frontend/.env with Supabase credentials:
 # VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+# Optional: override service URLs when hosting
+# VITE_AI_SERVICE_URL and VITE_BACKEND_URL
+
+# Supabase Auth email (avoid rate limits)
+# In Supabase Dashboard: Authentication -> Settings -> SMTP
+# - Enable custom SMTP and provide your provider credentials (SendGrid/Mailgun/etc.)
+# - In dev, you can also disable "Confirm email" to avoid email throttling
 
 # Supabase table (user_settings)
 # Columns:
@@ -91,12 +98,53 @@ cp frontend/.env.example frontend/.env
 # ui_scale (numeric)
 # updated_at (timestamptz default now())
 
+# Supabase tables for chats (required)
+# Run in Supabase SQL editor:
+# create table public.chats (
+#   id text primary key,
+#   user_id uuid references auth.users on delete cascade,
+#   title text,
+#   system_prompt text,
+#   model text,
+#   created_at timestamptz default now(),
+#   updated_at timestamptz default now()
+# );
+#
+# create table public.chat_messages (
+#   id text primary key,
+#   chat_id text references public.chats on delete cascade,
+#   user_id uuid references auth.users on delete cascade,
+#   role text not null,
+#   content text not null,
+#   metadata jsonb,
+#   created_at timestamptz default now()
+# );
+#
+# create index on public.chat_messages (chat_id, created_at);
+# In ai-service/.env set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+
 # Start backend
 cd backend && npm run dev
 
 # Start AI service (separate terminal)
 cd ai-service && npm run dev
 ```
+
+## Hosting (single backend server + static frontend)
+
+```bash
+# Build the frontend
+cd frontend && npm run build
+
+# Build the backend
+cd backend && npm run build
+
+# Serve the built frontend from the backend
+# Set SERVE_FRONTEND=true (and FRONTEND_DIST if your dist path differs)
+SERVE_FRONTEND=true npm run start
+```
+
+Set `VITE_AI_SERVICE_URL` and `VITE_BACKEND_URL` in `frontend/.env` to your hosted endpoints.
 
 ## Team
 

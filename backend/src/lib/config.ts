@@ -13,6 +13,8 @@ const envSchema = z.object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     API_SECRET: z.string().optional(),
     DATA_STORE_PATH: z.string().optional(),
+    SERVE_FRONTEND: z.coerce.boolean().optional(),
+    FRONTEND_DIST: z.string().optional(),
 });
 
 function loadConfig() {

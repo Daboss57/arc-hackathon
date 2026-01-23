@@ -16,6 +16,11 @@ from google.genai import types
 from starlette.concurrency import iterate_in_threadpool
 from contextlib import asynccontextmanager
 
+try:
+    from postgrest.exceptions import APIError
+except Exception:  # pragma: no cover - optional dependency
+    APIError = Exception
+
 dotenv.load_dotenv(dotenv.find_dotenv())
 
 API_KEY = os.getenv("GOOGLE_AI_API_KEY")
@@ -23,6 +28,20 @@ if not API_KEY:
     API_KEY = dotenv.get_key(dotenv.find_dotenv(), "GOOGLE_AI_API_KEY")
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3001").rstrip("/")
+
+SUPABASE_URL = dotenv.get_key(dotenv.find_dotenv(), "SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = dotenv.get_key(dotenv.find_dotenv(), "SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_ENABLED = False
+SUPABASE_CLIENT = None
+
+try:
+    from supabase import create_client
+except Exception:  # pragma: no cover - optional dependency
+    create_client = None
+
+if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY and create_client:
+    SUPABASE_CLIENT = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    SUPABASE_ENABLED = True
 
 AgentClient = genai.Client(api_key=API_KEY) if API_KEY else None
 
@@ -43,8 +62,8 @@ DEFAULT_SYSTEM_PROMPT = (
     "   DO NOT use api.demo.com or any other placeholder URLs - they don't exist."
 )
 
-MAX_TOOL_STEPS = int(os.getenv("MAX_TOOL_STEPS", "8"))  # Increased to allow search + purchase
-HTTP_TIMEOUT = float(os.getenv("BACKEND_TIMEOUT", "30"))
+MAX_TOOL_STEPS = int(os.getenv("MAX_TOOL_STEPS", "12"))  # Increased to allow search + purchase
+HTTP_TIMEOUT = float(os.getenv("BACKEND_TIMEOUT", "60"))
 
 HTTP_CLIENT = httpx.AsyncClient(timeout=HTTP_TIMEOUT)
 
@@ -256,6 +275,15 @@ function_tool = types.Tool(
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if not SUPABASE_ENABLED or not SUPABASE_CLIENT:
+        raise RuntimeError(
+            "Supabase is required. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in ai-service/.env."
+        )
+    try:
+        await supabase_exec(lambda: SUPABASE_CLIENT.table("chats").select("id").limit(1).execute())
+        await supabase_exec(lambda: SUPABASE_CLIENT.table("chat_messages").select("id").limit(1).execute())
+    except HTTPException as exc:
+        raise RuntimeError(str(exc.detail)) from exc
     yield
     await HTTP_CLIENT.aclose()
 
@@ -269,9 +297,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-STORE_LOCK = asyncio.Lock()
-CHATS: Dict[str, Dict[str, Any]] = {}
-USER_CHATS: Dict[str, List[str]] = {}
 
 
 class ChatCreateRequest(BaseModel):
@@ -328,22 +353,18 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
-def append_message(
-    chat: Dict[str, Any],
+def build_message(
     role: str,
     content: str,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    message = {
+    return {
         "id": new_id("msg"),
         "role": role,
         "content": content,
         "created_at": now_iso(),
         "metadata": metadata,
     }
-    chat["messages"].append(message)
-    chat["updated_at"] = now_iso()
-    return message
 
 
 def build_contents(messages: List[Dict[str, Any]]) -> List[types.Content]:
@@ -376,6 +397,146 @@ def normalize_args(raw_args: Any) -> Dict[str, Any]:
         return dict(raw_args)
     except TypeError:
         return {"_raw": str(raw_args)}
+
+
+async def supabase_exec(action):
+    if not SUPABASE_ENABLED or not SUPABASE_CLIENT:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+        )
+
+    def _run():
+        return action()
+
+    try:
+        response = await asyncio.to_thread(_run)
+    except APIError as exc:  # pragma: no cover - Supabase API error
+        raise HTTPException(status_code=500, detail=f"Supabase error: {exc}") from exc
+    except Exception as exc:  # pragma: no cover - network or schema errors
+        raise HTTPException(status_code=500, detail=f"Supabase request failed: {exc}") from exc
+
+    data = getattr(response, "data", None)
+    error = getattr(response, "error", None)
+    status = getattr(response, "status_code", None)
+
+    if error:
+        raise HTTPException(status_code=500, detail=f"Supabase error: {error}")
+    if status and status >= 400:
+        raise HTTPException(status_code=500, detail=f"Supabase request failed (status {status}).")
+
+    return data
+
+
+def normalize_chat_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "title": row.get("title"),
+        "system_prompt": row.get("system_prompt") or DEFAULT_SYSTEM_PROMPT,
+        "model": row.get("model") or DEFAULT_MODEL,
+        "created_at": row.get("created_at") or now_iso(),
+        "updated_at": row.get("updated_at") or now_iso(),
+    }
+
+
+async def db_create_chat(chat: Dict[str, Any]) -> Dict[str, Any]:
+    row = normalize_chat_row(chat)
+    await supabase_exec(lambda: SUPABASE_CLIENT.table("chats").insert(row).execute())
+    return row
+
+
+async def db_list_chats(user_id: str) -> List[Dict[str, Any]]:
+    data = await supabase_exec(
+        lambda: SUPABASE_CLIENT.table("chats")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("updated_at", desc=True)
+        .execute()
+    )
+    if not data:
+        return []
+    return [normalize_chat_row(row) for row in data]
+
+
+async def db_get_chat(chat_id: str) -> Optional[Dict[str, Any]]:
+    data = await supabase_exec(
+        lambda: SUPABASE_CLIENT.table("chats")
+        .select("*")
+        .eq("id", chat_id)
+        .limit(1)
+        .execute()
+    )
+    if not data:
+        return None
+    return normalize_chat_row(data[0])
+
+
+async def db_list_messages(chat_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    if limit:
+        query = (
+            SUPABASE_CLIENT.table("chat_messages")
+            .select("*")
+            .eq("chat_id", chat_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+        )
+    else:
+        query = SUPABASE_CLIENT.table("chat_messages").select("*").eq("chat_id", chat_id).order("created_at", desc=False)
+    data = await supabase_exec(lambda: query.execute())
+    if not data:
+        return []
+    rows = [
+        {
+            "id": row["id"],
+            "role": row["role"],
+            "content": row["content"],
+            "created_at": row.get("created_at") or now_iso(),
+            "metadata": row.get("metadata"),
+        }
+        for row in data
+    ]
+    if limit:
+        rows.reverse()
+    return rows
+
+
+async def db_get_first_user_message(chat_id: str) -> str:
+    query = (
+        SUPABASE_CLIENT.table("chat_messages")
+        .select("content, role")
+        .eq("chat_id", chat_id)
+        .eq("role", "user")
+        .order("created_at", desc=False)
+        .limit(1)
+    )
+    data = await supabase_exec(lambda: query.execute())
+    if not data:
+        return ""
+    return str(data[0].get("content") or "").strip()
+
+
+async def db_insert_message(chat_id: str, user_id: str, message: Dict[str, Any]) -> Dict[str, Any]:
+    row = {
+        "id": message["id"],
+        "chat_id": chat_id,
+        "user_id": user_id,
+        "role": message["role"],
+        "content": message["content"],
+        "metadata": message.get("metadata"),
+        "created_at": message["created_at"],
+    }
+    await supabase_exec(lambda: SUPABASE_CLIENT.table("chat_messages").insert(row).execute())
+    return message
+
+
+async def db_update_chat(chat_id: str, fields: Dict[str, Any]) -> None:
+    await supabase_exec(lambda: SUPABASE_CLIENT.table("chats").update(fields).eq("id", chat_id).execute())
+
+
+async def db_delete_chat(chat_id: str) -> None:
+    await supabase_exec(lambda: SUPABASE_CLIENT.table("chat_messages").delete().eq("chat_id", chat_id).execute())
+    await supabase_exec(lambda: SUPABASE_CLIENT.table("chats").delete().eq("id", chat_id).execute())
 
 
 async def backend_request(
@@ -844,8 +1005,8 @@ async def generate_chat_title(message_text: str, model: str) -> str:
         return message_text[:40].strip() or "New Chat"
 
     prompt = (
-        "Create a short 3-5 word title for this conversation. "
-        "Use title case. No quotes.\n\n"
+        "Create a short 3-5 word title summarizing this conversation. "
+        "Use title case. Do not copy the user's words verbatim. No quotes.\n\n"
         f"Conversation: {message_text}"
     )
     response = await asyncio.to_thread(
@@ -860,24 +1021,63 @@ async def generate_chat_title(message_text: str, model: str) -> str:
     title = extract_text(response)
     if not title:
         return message_text[:40].strip() or "New Chat"
-    return title.replace('"', '').replace("'", '').strip()[:60]
+    cleaned = title.replace('"', '').replace("'", '').strip()
+    if cleaned.lower().startswith("user:"):
+        cleaned = cleaned.split("user:", 1)[-1].strip()
+    if "assistant:" in cleaned.lower():
+        parts = cleaned.split("assistant:", 1)
+        cleaned = parts[0].strip()
+    if cleaned.lower() == message_text.strip().lower():
+        return "AutoWealth Session"
+    return cleaned[:60]
 
 
 async def maybe_set_chat_title(chat_id: str, seed_text: str, model: str) -> None:
     if not seed_text:
         return
-    async with STORE_LOCK:
-        chat = CHATS.get(chat_id)
-        if not chat or chat.get("title"):
-            return
+    chat = await db_get_chat(chat_id)
+    if not chat:
+        return
+    existing_title = (chat.get("title") or "").strip()
+    first_user = await db_get_first_user_message(chat_id)
+    existing_lower = existing_title.lower()
+    placeholder = (
+        existing_lower in ("new chat", first_user.lower())
+        or existing_lower.startswith("user:")
+        or "assistant:" in existing_lower
+    )
+    if existing_title and not placeholder:
+        return
 
     title = await generate_chat_title(seed_text, model)
-    async with STORE_LOCK:
-        chat = CHATS.get(chat_id)
-        if not chat or chat.get("title"):
-            return
-        chat["title"] = title
-        chat["updated_at"] = now_iso()
+    chat = await db_get_chat(chat_id)
+    if not chat:
+        return
+    existing_title = (chat.get("title") or "").strip()
+    first_user = await db_get_first_user_message(chat_id)
+    existing_lower = existing_title.lower()
+    placeholder = (
+        existing_lower in ("new chat", first_user.lower())
+        or existing_lower.startswith("user:")
+        or "assistant:" in existing_lower
+    )
+    if existing_title and not placeholder:
+        return
+    await db_update_chat(chat_id, {"title": title, "updated_at": now_iso()})
+
+
+def build_title_seed(messages: List[Dict[str, Any]], assistant_text: Optional[str]) -> str:
+    user_text = ""
+    for msg in messages:
+        if msg.get("role") == "user" and msg.get("content"):
+            user_text = str(msg.get("content")).strip()
+            break
+    assistant_snippet = (assistant_text or "").strip()
+    if assistant_snippet:
+        seed = f"{user_text}. {assistant_snippet}"
+    else:
+        seed = user_text
+    return seed[:400]
 
 
 ## Streaming helper is implemented inline in the SSE endpoint to avoid returning values from an async generator.
@@ -900,30 +1100,33 @@ async def create_chat(request: ChatCreateRequest) -> Dict[str, Any]:
         "model": request.model or DEFAULT_MODEL,
         "created_at": now,
         "updated_at": now,
-        "messages": [],
     }
 
-    async with STORE_LOCK:
-        CHATS[chat_id] = chat
-        USER_CHATS.setdefault(request.user_id, []).append(chat_id)
+    await db_create_chat(chat)
 
     return chat
 
 
 @app.get("/api/users/{user_id}/chats", response_model=List[ChatResponse])
 async def list_chats(user_id: str) -> List[Dict[str, Any]]:
-    async with STORE_LOCK:
-        chat_ids = USER_CHATS.get(user_id, [])
-        return [CHATS[chat_id] for chat_id in chat_ids]
+    return await db_list_chats(user_id)
 
 
 @app.get("/api/chats/{chat_id}", response_model=ChatResponse)
 async def get_chat(chat_id: str) -> Dict[str, Any]:
-    async with STORE_LOCK:
-        chat = CHATS.get(chat_id)
-        if not chat:
-            raise HTTPException(status_code=404, detail="Chat not found.")
-        return chat
+    chat = await db_get_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    return chat
+
+
+@app.delete("/api/chats/{chat_id}")
+async def delete_chat(chat_id: str) -> Dict[str, Any]:
+    chat = await db_get_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    await db_delete_chat(chat_id)
+    return {"ok": True}
 
 
 @app.get("/api/chats/{chat_id}/messages", response_model=ChatMessagesResponse)
@@ -931,14 +1134,11 @@ async def list_messages(
     chat_id: str,
     limit: Optional[int] = Query(default=None, ge=1, le=500),
 ) -> Dict[str, Any]:
-    async with STORE_LOCK:
-        chat = CHATS.get(chat_id)
-        if not chat:
-            raise HTTPException(status_code=404, detail="Chat not found.")
-        messages = chat["messages"]
-        if limit:
-            messages = messages[-limit:]
-        return {"chat_id": chat_id, "messages": messages}
+    chat = await db_get_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    messages = await db_list_messages(chat_id, limit)
+    return {"chat_id": chat_id, "messages": messages}
 
 
 @app.post("/api/chats/{chat_id}/messages", response_model=ChatMessageCreateResponse)
@@ -946,14 +1146,16 @@ async def create_message(
     chat_id: str,
     request: MessageCreateRequest,
 ) -> Dict[str, Any]:
-    async with STORE_LOCK:
-        chat = CHATS.get(chat_id)
-        if not chat:
-            raise HTTPException(status_code=404, detail="Chat not found.")
-        message = append_message(chat, request.role, request.content)
-        message_snapshot = list(chat["messages"])
-        system_prompt = chat["system_prompt"]
-        model = request.model or chat["model"] or DEFAULT_MODEL
+    chat = await db_get_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    history = await db_list_messages(chat_id)
+    message = build_message(request.role, request.content)
+    await db_insert_message(chat_id, chat["user_id"], message)
+    await db_update_chat(chat_id, {"updated_at": message["created_at"]})
+    message_snapshot = [*history, message]
+    system_prompt = chat["system_prompt"]
+    model = request.model or chat["model"] or DEFAULT_MODEL
 
     assistant_message = None
     if request.respond and request.role == "user":
@@ -966,18 +1168,12 @@ async def create_message(
             use_search=request.use_search,
             user_id=chat["user_id"],
         )
-        async with STORE_LOCK:
-            chat = CHATS.get(chat_id)
-            if not chat:
-                raise HTTPException(status_code=404, detail="Chat not found.")
-            assistant_message = append_message(
-                chat,
-                "assistant",
-                assistant["content"],
-                assistant["metadata"],
-            )
+        assistant_message = build_message("assistant", assistant["content"], assistant["metadata"])
+        await db_insert_message(chat_id, chat["user_id"], assistant_message)
+        await db_update_chat(chat_id, {"updated_at": assistant_message["created_at"]})
         if message_snapshot:
-            await maybe_set_chat_title(chat_id, message_snapshot[0]["content"], model)
+            seed_text = build_title_seed(message_snapshot, assistant["content"])
+            await maybe_set_chat_title(chat_id, seed_text, model)
 
     return {
         "chat_id": chat_id,
@@ -991,15 +1187,17 @@ async def create_message_stream(
     chat_id: str,
     request: MessageCreateRequest,
 ):
-    async with STORE_LOCK:
-        chat = CHATS.get(chat_id)
-        if not chat:
-            raise HTTPException(status_code=404, detail="Chat not found.")
-        message = append_message(chat, request.role, request.content)
-        message_snapshot = list(chat["messages"])
-        system_prompt = chat["system_prompt"]
-        model = request.model or chat["model"] or DEFAULT_MODEL
-        user_id = chat["user_id"]  # Capture before entering generator
+    chat = await db_get_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    history = await db_list_messages(chat_id)
+    message = build_message(request.role, request.content)
+    await db_insert_message(chat_id, chat["user_id"], message)
+    await db_update_chat(chat_id, {"updated_at": message["created_at"]})
+    message_snapshot = [*history, message]
+    system_prompt = chat["system_prompt"]
+    model = request.model or chat["model"] or DEFAULT_MODEL
+    user_id = chat["user_id"]  # Capture before entering generator
 
     if not request.respond or request.role != "user":
         raise HTTPException(status_code=400, detail="Streaming only supports user messages with respond=true.")
@@ -1081,17 +1279,15 @@ async def create_message_stream(
                 yield f"data: {json.dumps({'type': 'error', 'error': 'No response generated'})}\n\n"
                 return
 
-        async with STORE_LOCK:
-            current_chat = CHATS.get(chat_id)  # Renamed to avoid shadowing
-            if not current_chat:
-                yield f"data: {json.dumps({'type': 'error', 'error': 'Chat not found'})}\n\n"
-                return
-            assistant_message = append_message(current_chat, "assistant", full_text, metadata)
+        assistant_message = build_message("assistant", full_text, metadata)
+        await db_insert_message(chat_id, user_id, assistant_message)
+        await db_update_chat(chat_id, {"updated_at": assistant_message["created_at"]})
 
         yield f"data: {json.dumps({'type': 'done', 'message': assistant_message})}\n\n"
 
         if message_snapshot:
-            await maybe_set_chat_title(chat_id, message_snapshot[0]["content"], model)
+            seed_text = build_title_seed(message_snapshot, full_text)
+            await maybe_set_chat_title(chat_id, seed_text, model)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

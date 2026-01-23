@@ -3,6 +3,7 @@ import type { Message } from '../api/aiService';
 interface MessageListProps {
     messages: Message[];
     isLoading?: boolean;
+    showTyping?: boolean;
     onSuggestionClick?: (message: string) => void;
 }
 
@@ -75,7 +76,8 @@ const SUGGESTIONS = [
     { emoji: '📜', text: 'Show my spending policies.' },
 ];
 
-export function MessageList({ messages, isLoading, onSuggestionClick }: MessageListProps) {
+export function MessageList({ messages, isLoading, showTyping, onSuggestionClick }: MessageListProps) {
+    const shouldShowTyping = showTyping ?? Boolean(isLoading);
     return (
         <div className="message-list">
             {messages.length === 0 && !isLoading && (
@@ -127,7 +129,7 @@ export function MessageList({ messages, isLoading, onSuggestionClick }: MessageL
                 </div>
             ))}
 
-            {isLoading && (
+            {shouldShowTyping && (
                 <div className="message assistant loading">
                     <div className="message-avatar">🤖</div>
                     <div className="message-content">
