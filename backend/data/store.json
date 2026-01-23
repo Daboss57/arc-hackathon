@@ -79,12 +79,6 @@
       ],
       "createdAt": "2026-01-23T07:01:50.900Z",
       "updatedAt": "2026-01-23T07:01:50.900Z"
-    },
-    {
-      "id": "0fb0a0f1-1300-4e08-9b7b-c0b6b26b690b",
-      "enabled": false,
-      "createdAt": "2026-01-23T07:03:12.330Z",
-      "updatedAt": "2026-01-23T07:09:54.838Z"
     }
   ],
   "transactions": [

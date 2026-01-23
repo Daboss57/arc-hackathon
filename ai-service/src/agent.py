@@ -902,6 +902,8 @@ async def create_message(
         message_snapshot = list(chat["messages"])
         system_prompt = chat["system_prompt"]
         model = request.model or chat["model"] or DEFAULT_MODEL
+        chat_user_id = chat["user_id"]
+        chat_user_id = chat["user_id"]
 
     assistant_message = None
     if request.respond and request.role == "user":
@@ -976,7 +978,7 @@ async def create_message_stream(
                     tools=[function_tool],
                 )
                 _, executed_tools, contents = await run_tool_loop(
-                    contents, tool_config, model, chat["user_id"]
+                    contents, tool_config, model, chat_user_id
                 )
 
             stream_config = types.GenerateContentConfig(
@@ -1013,11 +1015,11 @@ async def create_message_stream(
             return
 
         async with STORE_LOCK:
-            chat = CHATS.get(chat_id)
-            if not chat:
+            latest_chat = CHATS.get(chat_id)
+            if not latest_chat:
                 yield f"data: {json.dumps({'type': 'error', 'error': 'Chat not found'})}\n\n"
                 return
-            assistant_message = append_message(chat, "assistant", full_text, metadata)
+            assistant_message = append_message(latest_chat, "assistant", full_text, metadata)
 
         yield f"data: {json.dumps({'type': 'done', 'message': assistant_message})}\n\n"
 

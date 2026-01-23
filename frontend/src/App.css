@@ -12,6 +12,7 @@
   --success: #22c55e;
   --error: #ef4444;
   --warning: #f59e0b;
+  --ui-scale: clamp(1, 0.82 + 0.02vw, 1.2);
 }
 
 * {
@@ -42,9 +43,9 @@ body {
 /* Chat Window */
 .chat-window {
   width: 100%;
-  max-width: 1280px;
+  max-width: min(1600px, 94vw);
   height: 90vh;
-  max-height: 800px;
+  max-height: min(980px, 92vh);
   display: flex;
   flex-direction: column;
   background: var(--bg-secondary);
@@ -54,6 +55,7 @@ body {
     0 25px 50px -12px rgba(0, 0, 0, 0.5),
     0 0 0 1px rgba(255, 255, 255, 0.05);
   overflow: hidden;
+  font-size: calc(1rem * var(--ui-scale));
 }
 
 /* Header */
@@ -121,7 +123,7 @@ body {
 .workspace {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 24vw, 460px);
   gap: 16px;
   padding: 16px;
   height: 100%;
