@@ -24,7 +24,7 @@ router.post('/execute', async (req, res) => {
 
 // x402 proxy endpoint - AI agent uses this to access paid APIs
 router.post('/x402/fetch', async (req, res) => {
-    const { url, method = 'GET', body, headers, category } = req.body;
+    const { url, method = 'GET', body, headers, category, metadata } = req.body;
 
     if (!url) {
         return res.status(400).json({ error: 'url is required' });
@@ -38,7 +38,8 @@ router.post('/x402/fetch', async (req, res) => {
             body: body ? JSON.stringify(body) : undefined,
         },
         category,
-        req.headers['x-user-id'] as string | undefined
+        req.headers['x-user-id'] as string | undefined,
+        metadata
     );
 
     if (result.policyBlocked) {

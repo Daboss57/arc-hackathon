@@ -22,7 +22,7 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
                 type="text"
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder="Ask about your balance, vendors, or make a purchase..."
+                placeholder="Ask about budgets, policies, or run an x402 demo payment..."
                 disabled={disabled}
             />
             <button type="submit" disabled={disabled || !content.trim()}>

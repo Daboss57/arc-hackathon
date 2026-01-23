@@ -4,6 +4,15 @@ import { BalanceDisplay } from './BalanceDisplay';
 import { MessageInput } from './MessageInput';
 import { MessageList } from './MessageList';
 import { QuickActions } from './QuickActions';
+import { AdvisorPanel } from './AdvisorPanel';
+import { AnalyticsPanel } from './AnalyticsPanel';
+import { PolicyCockpit } from './PolicyCockpit';
+import { ReceiptsPanel } from './ReceiptsPanel';
+import { X402DemoPanel } from './X402DemoPanel';
+import { SafetyControlsPanel } from './SafetyControlsPanel';
+import { PolicySimulationPanel } from './PolicySimulationPanel';
+import { VendorComparisonPanel } from './VendorComparisonPanel';
+import { MarketplacePanel } from './MarketplacePanel';
 
 const USER_ID = 'demo-user';
 
@@ -12,7 +21,7 @@ export function ChatWindow() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const [refreshKey, setRefreshKey] = useState(0);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Initialize chat on mount
@@ -62,7 +71,7 @@ export function ChatWindow() {
             });
 
             // Refresh balance after any transaction-related message
-            setRefreshTrigger((t) => t + 1);
+            setRefreshKey((t) => t + 1);
         } catch (err) {
             setError('Failed to send message. Check if services are running.');
             console.error(err);
@@ -78,32 +87,57 @@ export function ChatWindow() {
             <header className="chat-header">
                 <div className="header-left">
                     <h1>🤖 AutoWealth Agent</h1>
-                    <span className="subtitle">AI-Powered Financial Assistant</span>
+                    <span className="subtitle">AI Spend Optimizer for Autonomous Commerce</span>
                 </div>
-                <BalanceDisplay refreshTrigger={refreshTrigger} />
+                <BalanceDisplay refreshTrigger={refreshKey} />
             </header>
 
-            <QuickActions onAction={handleSend} disabled={isLoading || !chatId} />
-
-            {error && (
-                <div className="error-banner">
-                    <span>⚠️ {error}</span>
-                    <button onClick={() => setError(null)}>✕</button>
+            <div className="product-banner">
+                <div className="use-case">
+                    <span className="tag">Focus Use Case</span>
+                    <strong>Keep AI API spend under a monthly budget while the agent pays per-use.</strong>
+                    <span className="muted">Advisor proposes limits → you approve → policy enforces every payment.</span>
+                    <span className="muted">Tracks: Trustless Agent • Micropayments • Autonomous Commerce</span>
                 </div>
-            )}
+            </div>
 
-            <main className="chat-main">
-                <MessageList
-                    messages={messages}
-                    isLoading={isLoading}
-                    onSuggestionClick={handleSend}
-                />
-                <div ref={messagesEndRef} />
-            </main>
+            <div className="workspace">
+                <section className="chat-panel">
+                    <QuickActions onAction={handleSend} disabled={isLoading || !chatId} />
 
-            <footer className="chat-footer">
-                <MessageInput onSend={handleSend} disabled={isLoading || !chatId} />
-            </footer>
+                    {error && (
+                        <div className="error-banner">
+                            <span>⚠️ {error}</span>
+                            <button onClick={() => setError(null)}>✕</button>
+                        </div>
+                    )}
+
+                    <main className="chat-main">
+                        <MessageList
+                            messages={messages}
+                            isLoading={isLoading}
+                            onSuggestionClick={handleSend}
+                        />
+                        <div ref={messagesEndRef} />
+                    </main>
+
+                    <footer className="chat-footer">
+                        <MessageInput onSend={handleSend} disabled={isLoading || !chatId} />
+                    </footer>
+                </section>
+
+                <aside className="side-panel">
+                    <AdvisorPanel refreshKey={refreshKey} userId={USER_ID} onApplied={() => setRefreshKey((t) => t + 1)} />
+                    <SafetyControlsPanel refreshKey={refreshKey} userId={USER_ID} onChange={() => setRefreshKey((t) => t + 1)} />
+                    <PolicyCockpit refreshKey={refreshKey} onPolicyChange={() => setRefreshKey((t) => t + 1)} />
+                    <AnalyticsPanel refreshKey={refreshKey} userId={USER_ID} />
+                    <PolicySimulationPanel userId={USER_ID} />
+                    <MarketplacePanel userId={USER_ID} onPurchase={() => setRefreshKey((t) => t + 1)} />
+                    <VendorComparisonPanel />
+                    <X402DemoPanel userId={USER_ID} onPaymentComplete={() => setRefreshKey((t) => t + 1)} />
+                    <ReceiptsPanel refreshKey={refreshKey} userId={USER_ID} />
+                </aside>
+            </div>
         </div>
     );
 }

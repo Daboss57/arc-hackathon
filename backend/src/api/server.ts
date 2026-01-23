@@ -2,8 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
-import { initializeWallet } from '../treasury/wallet.service.js';
-import { seedDefaultPolicies } from '../policy/engine.js';
+import { initializeWallet, hydrateTransactionsFromStore } from '../treasury/wallet.service.js';
+import { seedDefaultPolicies, loadPoliciesFromStore } from '../policy/engine.js';
+import { initDataStore } from '../lib/dataStore.js';
 import treasuryRoutes from './routes/treasury.js';
 import policyRoutes from './routes/policy.js';
 import paymentRoutes from './routes/payments.js';
@@ -30,6 +31,10 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 async function start() {
     logger.info('Initializing services...');
+
+    await initDataStore();
+    loadPoliciesFromStore();
+    hydrateTransactionsFromStore();
 
     await initializeWallet();
     seedDefaultPolicies();

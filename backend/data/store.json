@@ -1,0 +1,108 @@
+{
+  "policies": [
+    {
+      "id": "54201723-9376-46c7-b0b0-a778b720a86a",
+      "name": "Default Spending Limits",
+      "description": "Basic safety limits for autonomous spending",
+      "enabled": true,
+      "rules": [
+        {
+          "type": "maxPerTransaction",
+          "params": {
+            "max": 10
+          }
+        },
+        {
+          "type": "dailyLimit",
+          "params": {
+            "limit": 50
+          }
+        },
+        {
+          "type": "monthlyBudget",
+          "params": {
+            "budget": 200
+          }
+        }
+      ],
+      "createdAt": "2026-01-23T06:34:34.248Z",
+      "updatedAt": "2026-01-23T06:34:34.248Z"
+    },
+    {
+      "id": "be575053-0d8d-42c8-a49c-5f07ddabd582",
+      "name": "Advisor Recommended Limits",
+      "description": "AutoWealth advisor recommended spending limits.",
+      "enabled": true,
+      "rules": [
+        {
+          "type": "monthlyBudget",
+          "params": {
+            "budget": 20
+          }
+        },
+        {
+          "type": "dailyLimit",
+          "params": {
+            "limit": 1
+          }
+        },
+        {
+          "type": "maxPerTransaction",
+          "params": {
+            "max": 0.6
+          }
+        }
+      ],
+      "createdAt": "2026-01-23T06:40:49.323Z",
+      "updatedAt": "2026-01-23T06:40:49.323Z"
+    }
+  ],
+  "transactions": [
+    {
+      "from": "0x73b28badd68212ce5e26e6d87c21113501775a65",
+      "to": "0x03972eb60d23a16edf247a521b83153ceb70f9e9",
+      "amount": "0.01",
+      "txHash": "",
+      "currency": "USDC",
+      "status": "confirmed",
+      "category": "x402-demo",
+      "description": "x402 payment for /api/payments/x402/demo/paid-content",
+      "policy": {
+        "approved": true,
+        "appliedPolicies": [
+          "Default Spending Limits",
+          "Advisor Recommended Limits"
+        ]
+      },
+      "userId": "demo-user",
+      "id": "tx_1769150508093_8ya8y4",
+      "createdAt": "2026-01-23T06:41:48.093Z"
+    },
+    {
+      "from": "0x73b28badd68212ce5e26e6d87c21113501775a65",
+      "to": "0x03972eb60d23a16edf247a521b83153ceb70f9e9",
+      "amount": "0.01",
+      "txHash": "",
+      "currency": "USDC",
+      "status": "confirmed",
+      "category": "x402-demo",
+      "description": "x402 payment for /api/payments/x402/demo/paid-content",
+      "policy": {
+        "approved": true,
+        "appliedPolicies": [
+          "Default Spending Limits",
+          "Advisor Recommended Limits"
+        ]
+      },
+      "userId": "demo-user",
+      "id": "tx_1769150491992_4tbgh8",
+      "createdAt": "2026-01-23T06:41:31.992Z"
+    }
+  ],
+  "safety": {
+    "paymentsPaused": false,
+    "safeModeByUser": {},
+    "approvedSpendByUser": {},
+    "autoBudgetByUser": {}
+  }
+}

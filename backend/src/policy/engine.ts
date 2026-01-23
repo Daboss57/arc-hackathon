@@ -1,9 +1,23 @@
 import { v4 as uuid } from 'uuid';
 import { logger } from '../lib/logger.js';
 import { evaluateRule } from './rules.js';
+import { getPolicies, setPolicies } from '../lib/dataStore.js';
+import { hasUserApprovedOnce, isPaymentsPaused, isSafeModeEnabled, markUserApprovedOnce } from '../lib/safety.js';
 import type { Policy, PaymentContext, PolicyValidationResult, ValidationSummary, Rule } from './types.js';
 
 const policies: Map<string, Policy> = new Map();
+
+export function loadPoliciesFromStore(): void {
+    const stored = getPolicies();
+    policies.clear();
+    for (const policy of stored) {
+        policies.set(policy.id, policy);
+    }
+}
+
+function persistPolicies(): void {
+    setPolicies(Array.from(policies.values()));
+}
 
 export function createPolicy(data: { name: string; description?: string; rules: Rule[] }): Policy {
     const policy: Policy = {
@@ -18,6 +32,7 @@ export function createPolicy(data: { name: string; description?: string; rules: 
 
     policies.set(policy.id, policy);
     logger.info('Policy created', { policyId: policy.id, name: policy.name });
+    persistPolicies();
     return policy;
 }
 
@@ -34,14 +49,53 @@ export function updatePolicy(id: string, updates: Partial<Pick<Policy, 'name' | 
     if (!policy) return null;
 
     Object.assign(policy, updates, { updatedAt: new Date() });
+    persistPolicies();
     return policy;
 }
 
 export function deletePolicy(id: string): boolean {
-    return policies.delete(id);
+    const deleted = policies.delete(id);
+    if (deleted) persistPolicies();
+    return deleted;
 }
 
 export async function validatePayment(ctx: PaymentContext): Promise<ValidationSummary> {
+    if (isPaymentsPaused()) {
+        return {
+            approved: false,
+            blockedBy: 'Kill Switch',
+            results: [
+                {
+                    passed: false,
+                    policyId: 'system',
+                    policyName: 'Kill Switch',
+                    reason: 'Payments are paused by the safety switch',
+                },
+            ],
+        };
+    }
+
+    const userId = typeof ctx.metadata?.userId === 'string' ? String(ctx.metadata.userId) : undefined;
+    const requiresApproval =
+        userId && isSafeModeEnabled(userId) && !hasUserApprovedOnce(userId);
+    if (requiresApproval) {
+        const approved = ctx.metadata?.approved === true;
+        if (!approved) {
+            return {
+                approved: false,
+                blockedBy: 'Safe Mode',
+                results: [
+                    {
+                        passed: false,
+                        policyId: 'system',
+                        policyName: 'Safe Mode',
+                        reason: 'User approval required for the first spend',
+                    },
+                ],
+            };
+        }
+    }
+
     const results: PolicyValidationResult[] = [];
     let approved = true;
     let blockedBy: string | undefined;
@@ -79,6 +133,10 @@ export async function validatePayment(ctx: PaymentContext): Promise<ValidationSu
 
     if (!approved) {
         logger.warn('Payment blocked by policy', { blockedBy, amount: ctx.amount, recipient: ctx.recipient });
+    }
+
+    if (approved && requiresApproval && userId) {
+        markUserApprovedOnce(userId);
     }
 
     return { approved, results, blockedBy };

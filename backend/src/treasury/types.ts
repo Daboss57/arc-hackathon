@@ -24,6 +24,11 @@ export interface Transaction {
     status: 'pending' | 'confirmed' | 'failed';
     category?: string;
     description?: string;
+    policy?: {
+        approved: boolean;
+        appliedPolicies: string[];
+        blockedBy?: string;
+    };
     userId?: string;  // Track which user owns this transaction
     createdAt: Date;
     confirmedAt?: Date;

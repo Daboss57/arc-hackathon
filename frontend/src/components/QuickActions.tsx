@@ -5,10 +5,11 @@ interface QuickActionsProps {
 
 const QUICK_ACTIONS = [
     { label: '💰 Balance', message: 'What is my treasury balance?' },
-    { label: '🛒 Vendors', message: 'List all vendors and their products' },
+    { label: '🎯 Optimize Spend', message: 'Help me keep AI spend under $20/month.' },
+    { label: '🛒 Marketplace', message: 'List vendors and recommend the best value purchase.' },
     { label: '📜 Policies', message: 'Show my spending policies' },
-    { label: '📊 Analytics', message: 'Show my spending analytics' },
-    { label: '🛍️ Orders', message: 'List my recent orders' },
+    { label: '⚡ x402 Demo', message: 'Run the paid API demo using x402.' },
+    { label: '🧾 Receipts', message: 'Show my recent payment receipts' },
 ];
 
 export function QuickActions({ onAction, disabled }: QuickActionsProps) {

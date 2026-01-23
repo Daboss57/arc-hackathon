@@ -43,11 +43,13 @@ router.delete('/:id', (req, res) => {
 });
 
 router.post('/validate', async (req, res) => {
-    const { amount, recipient, category, description } = req.body;
+    const { amount, recipient, category, description, metadata } = req.body;
     if (!amount || !recipient) {
         return res.status(400).json({ error: 'amount and recipient are required' });
     }
-    const result = await validatePayment({ amount, recipient, category, description });
+    const userId = req.headers['x-user-id'] as string | undefined;
+    const mergedMetadata = userId ? { ...(metadata || {}), userId } : metadata;
+    const result = await validatePayment({ amount, recipient, category, description, metadata: mergedMetadata });
     res.json(result);
 });
 

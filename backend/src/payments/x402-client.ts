@@ -32,7 +32,8 @@ export async function x402Fetch(
     url: string,
     options: RequestInit = {},
     category?: string,
-    userId?: string
+    userId?: string,
+    metadata?: Record<string, unknown>
 ): Promise<X402FetchResult> {
     const wallet = await getWallet();
     if (!wallet) {
@@ -83,8 +84,14 @@ export async function x402Fetch(
             recipient: paymentRequirements.recipient || new URL(url).hostname,
             category: category || 'x402-api',
             description: `x402 payment for ${url}`,
-            metadata: { userId },
+            metadata: { userId, ...(metadata || {}) },
         });
+        const appliedPolicies = policyCheck.results?.map(result => result.policyName) ?? [];
+        const policyMeta = {
+            approved: policyCheck.approved,
+            appliedPolicies,
+            blockedBy: policyCheck.blockedBy,
+        };
 
         if (!policyCheck.approved) {
             logger.warn('x402 payment blocked by policy', {
@@ -116,13 +123,15 @@ export async function x402Fetch(
 
         // Record the transaction for analytics
         await recordTransaction({
-            type: 'x402-payment',
+            from: wallet.address,
+            to: paymentRequirements.recipient,
             amount: paymentRequirements.amount,
-            recipient: paymentRequirements.recipient,
-            txHash: transferResult.txHash,
+            txHash: transferResult.txHash || '',
+            currency: 'USDC',
             status: 'confirmed',
             category: category || 'x402-api',
             description: `x402 payment for ${new URL(url).pathname}`,
+            policy: policyMeta,
             userId,
         });
 

@@ -29,7 +29,7 @@ def main() -> int:
         pretty("Chat created", chat)
 
         message_payload: Dict[str, Any] = {
-            "content": "Check treasury balance and list vendors.",
+            "content": "Check treasury balance and list vendors. and buy some books",
             "respond": True,
             "include_thoughts": False,
             "use_tools": True,

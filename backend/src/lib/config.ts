@@ -12,6 +12,7 @@ const envSchema = z.object({
     PORT: z.coerce.number().default(3001),
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     API_SECRET: z.string().optional(),
+    DATA_STORE_PATH: z.string().optional(),
 });
 
 function loadConfig() {

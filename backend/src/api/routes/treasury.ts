@@ -1,5 +1,12 @@
 import { Router } from 'express';
 import { getBalance, getTransactionHistory, initializeWallet, getWallet, getSpendingAnalytics } from '../../treasury/wallet.service.js';
+import {
+    getSafetySnapshot,
+    resetUserApproval,
+    setAutoBudgetEnabled,
+    setPaymentsPaused,
+    setSafeModeForUser,
+} from '../../lib/safety.js';
 
 const router = Router();
 
@@ -53,6 +60,35 @@ router.get('/analytics', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: String(err) });
     }
+});
+
+router.get('/safety', (req, res) => {
+    const userId = req.headers['x-user-id'] as string | undefined;
+    const snapshot = getSafetySnapshot(userId);
+    res.json(snapshot);
+});
+
+router.post('/safety', (req, res) => {
+    const userId = req.headers['x-user-id'] as string | undefined;
+    const { paymentsPaused, safeMode, resetApproval, autoBudget } = req.body || {};
+
+    if (typeof paymentsPaused === 'boolean') {
+        setPaymentsPaused(paymentsPaused);
+    }
+
+    if (userId && typeof safeMode === 'boolean') {
+        setSafeModeForUser(userId, safeMode);
+    }
+
+    if (userId && typeof autoBudget === 'boolean') {
+        setAutoBudgetEnabled(userId, autoBudget);
+    }
+
+    if (userId && resetApproval) {
+        resetUserApproval(userId);
+    }
+
+    res.json(getSafetySnapshot(userId));
 });
 
 export default router;

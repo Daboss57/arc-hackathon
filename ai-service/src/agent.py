@@ -33,8 +33,9 @@ DEFAULT_SYSTEM_PROMPT = (
     "context for values like balances, prices, or transaction status.\n"
     "2. When asked about balance, ALWAYS call get_treasury_balance - never quote old values.\n"
     "3. When making purchases, first check the balance, then execute the purchase.\n"
-    "4. Be concise but informative in your responses.\n"
-    "5. If a tool call fails, explain the error to the user."
+    "4. Never create or update spending policies without explicit user approval.\n"
+    "5. Be concise but informative in your responses.\n"
+    "6. If a tool call fails, explain the error to the user."
 )
 
 MAX_TOOL_STEPS = int(os.getenv("MAX_TOOL_STEPS", "8"))  # Increased to allow search + purchase
@@ -368,15 +369,19 @@ async def backend_request(
     params: Optional[Dict[str, Any]] = None,
     json_body: Optional[Dict[str, Any]] = None,
     headers: Optional[Dict[str, str]] = None,
+    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     url = f"{BACKEND_URL}{path}"
     try:
+        request_headers = headers or {}
+        if user_id and "x-user-id" not in {k.lower() for k in request_headers}:
+            request_headers = {**request_headers, "x-user-id": user_id}
         response = await HTTP_CLIENT.request(
             method,
             url,
             params=params,
             json=json_body,
-            headers=headers,
+            headers=request_headers,
         )
     except httpx.RequestError as exc:
         return {"ok": False, "error": str(exc)}
@@ -392,32 +397,32 @@ async def backend_request(
     return {"ok": True, "data": payload}
 
 
-async def tool_get_treasury_balance(_: Dict[str, Any]) -> Dict[str, Any]:
-    return await backend_request("GET", "/api/treasury/balance")
+async def tool_get_treasury_balance(_: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    return await backend_request("GET", "/api/treasury/balance", user_id=user_id)
 
 
-async def tool_get_treasury_history(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_get_treasury_history(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     params: Dict[str, Any] = {}
     if "limit" in args:
         params["limit"] = args["limit"]
     if "offset" in args:
         params["offset"] = args["offset"]
-    return await backend_request("GET", "/api/treasury/history", params=params)
+    return await backend_request("GET", "/api/treasury/history", params=params, user_id=user_id)
 
 
-async def tool_get_wallet(_: Dict[str, Any]) -> Dict[str, Any]:
-    return await backend_request("GET", "/api/treasury/wallet")
+async def tool_get_wallet(_: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    return await backend_request("GET", "/api/treasury/wallet", user_id=user_id)
 
 
-async def tool_get_spending_analytics(_: Dict[str, Any]) -> Dict[str, Any]:
-    return await backend_request("GET", "/api/treasury/analytics")
+async def tool_get_spending_analytics(_: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    return await backend_request("GET", "/api/treasury/analytics", user_id=user_id)
 
 
-async def tool_list_policies(_: Dict[str, Any]) -> Dict[str, Any]:
-    return await backend_request("GET", "/api/policy")
+async def tool_list_policies(_: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    return await backend_request("GET", "/api/policy", user_id=user_id)
 
 
-async def tool_create_policy(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_create_policy(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     name = args.get("name")
     rules = args.get("rules")
     if not name or not rules:
@@ -427,10 +432,10 @@ async def tool_create_policy(args: Dict[str, Any]) -> Dict[str, Any]:
         "description": args.get("description"),
         "rules": rules,
     }
-    return await backend_request("POST", "/api/policy", json_body=payload)
+    return await backend_request("POST", "/api/policy", json_body=payload, user_id=user_id)
 
 
-async def tool_update_policy(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_update_policy(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     policy_id = args.get("policy_id")
     if not policy_id:
         return {"ok": False, "error": "policy_id is required"}
@@ -440,17 +445,17 @@ async def tool_update_policy(args: Dict[str, Any]) -> Dict[str, Any]:
         "enabled": args.get("enabled"),
         "rules": args.get("rules"),
     }
-    return await backend_request("PUT", f"/api/policy/{policy_id}", json_body=payload)
+    return await backend_request("PUT", f"/api/policy/{policy_id}", json_body=payload, user_id=user_id)
 
 
-async def tool_delete_policy(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_delete_policy(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     policy_id = args.get("policy_id")
     if not policy_id:
         return {"ok": False, "error": "policy_id is required"}
-    return await backend_request("DELETE", f"/api/policy/{policy_id}")
+    return await backend_request("DELETE", f"/api/policy/{policy_id}", user_id=user_id)
 
 
-async def tool_validate_payment(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_validate_payment(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     amount = args.get("amount")
     recipient = args.get("recipient")
     if not amount or not recipient:
@@ -461,10 +466,10 @@ async def tool_validate_payment(args: Dict[str, Any]) -> Dict[str, Any]:
         "category": args.get("category"),
         "description": args.get("description"),
     }
-    return await backend_request("POST", "/api/policy/validate", json_body=payload)
+    return await backend_request("POST", "/api/policy/validate", json_body=payload, user_id=user_id)
 
 
-async def tool_execute_payment(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_execute_payment(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     recipient = args.get("recipient")
     amount = args.get("amount")
     if not recipient or not amount:
@@ -476,10 +481,10 @@ async def tool_execute_payment(args: Dict[str, Any]) -> Dict[str, Any]:
         "description": args.get("description"),
         "metadata": args.get("metadata"),
     }
-    return await backend_request("POST", "/api/payments/execute", json_body=payload)
+    return await backend_request("POST", "/api/payments/execute", json_body=payload, user_id=user_id)
 
 
-async def tool_x402_fetch(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_x402_fetch(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     url = args.get("url")
     if not url:
         return {"ok": False, "error": "url is required"}
@@ -490,47 +495,47 @@ async def tool_x402_fetch(args: Dict[str, Any]) -> Dict[str, Any]:
         "headers": args.get("headers"),
         "category": args.get("category"),
     }
-    return await backend_request("POST", "/api/payments/x402/fetch", json_body=payload)
+    return await backend_request("POST", "/api/payments/x402/fetch", json_body=payload, user_id=user_id)
 
 
-async def tool_get_x402_status(_: Dict[str, Any]) -> Dict[str, Any]:
-    return await backend_request("GET", "/api/payments/x402/status")
+async def tool_get_x402_status(_: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    return await backend_request("GET", "/api/payments/x402/status", user_id=user_id)
 
 
-async def tool_list_vendors(_: Dict[str, Any]) -> Dict[str, Any]:
-    return await backend_request("GET", "/api/vendors")
+async def tool_list_vendors(_: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    return await backend_request("GET", "/api/vendors", user_id=user_id)
 
 
-async def tool_search_products(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_search_products(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     query = args.get("query")
     if not query:
         return {"ok": False, "error": "query is required"}
-    return await backend_request("GET", "/api/vendors/search", params={"q": query})
+    return await backend_request("GET", "/api/vendors/search", params={"q": query}, user_id=user_id)
 
 
-async def tool_get_vendor(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_get_vendor(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     vendor_id = args.get("vendor_id")
     if not vendor_id:
         return {"ok": False, "error": "vendor_id is required"}
-    return await backend_request("GET", f"/api/vendors/{vendor_id}")
+    return await backend_request("GET", f"/api/vendors/{vendor_id}", user_id=user_id)
 
 
-async def tool_list_vendor_products(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_list_vendor_products(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     vendor_id = args.get("vendor_id")
     if not vendor_id:
         return {"ok": False, "error": "vendor_id is required"}
-    return await backend_request("GET", f"/api/vendors/{vendor_id}/products")
+    return await backend_request("GET", f"/api/vendors/{vendor_id}/products", user_id=user_id)
 
 
-async def tool_get_product(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_get_product(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     vendor_id = args.get("vendor_id")
     product_id = args.get("product_id")
     if not vendor_id or not product_id:
         return {"ok": False, "error": "vendor_id and product_id are required"}
-    return await backend_request("GET", f"/api/vendors/{vendor_id}/products/{product_id}")
+    return await backend_request("GET", f"/api/vendors/{vendor_id}/products/{product_id}", user_id=user_id)
 
 
-async def tool_purchase_product(args: Dict[str, Any]) -> Dict[str, Any]:
+async def tool_purchase_product(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     vendor_id = args.get("vendor_id")
     product_id = args.get("product_id")
     if not vendor_id or not product_id:
@@ -541,11 +546,11 @@ async def tool_purchase_product(args: Dict[str, Any]) -> Dict[str, Any]:
         "method": "POST",
         "category": args.get("category", "vendor-purchase"),
     }
-    return await backend_request("POST", "/api/payments/x402/fetch", json_body=payload)
+    return await backend_request("POST", "/api/payments/x402/fetch", json_body=payload, user_id=user_id)
 
 
-async def tool_list_orders(_: Dict[str, Any]) -> Dict[str, Any]:
-    return await backend_request("GET", "/api/vendors/orders/all")
+async def tool_list_orders(_: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    return await backend_request("GET", "/api/vendors/orders/all", user_id=user_id)
 
 
 TOOL_HANDLERS = {
@@ -616,6 +621,7 @@ async def run_with_tools(
     contents: List[types.Content],
     config: types.GenerateContentConfig,
     model: str,
+    user_id: Optional[str],
 ) -> Tuple[types.GenerateContentResponse, List[Dict[str, Any]]]:
     executed_tools: List[Dict[str, Any]] = []
     last_response: Optional[types.GenerateContentResponse] = None
@@ -653,7 +659,7 @@ async def run_with_tools(
             if not handler:
                 result = {"ok": False, "error": f"Unknown tool: {function_call.name}"}
             else:
-                result = await handler(args)
+                result = await handler(args, user_id)
 
             executed_tools.append(
                 {"name": function_call.name, "args": args, "result": result}
@@ -680,6 +686,7 @@ async def generate_assistant_message(
     include_thoughts: bool,
     use_tools: bool,
     use_search: bool,
+    user_id: Optional[str],
 ) -> Dict[str, Any]:
     if not AgentClient:
         raise HTTPException(
@@ -712,7 +719,7 @@ async def generate_assistant_message(
     contents = build_contents(messages)
 
     if use_tools:
-        response, executed_tools = await run_with_tools(contents, config, model)
+        response, executed_tools = await run_with_tools(contents, config, model, user_id)
     else:
         response = await asyncio.to_thread(
             AgentClient.models.generate_content,
@@ -876,6 +883,7 @@ async def create_message(
             include_thoughts=request.include_thoughts,
             use_tools=request.use_tools,
             use_search=request.use_search,
+            user_id=chat["user_id"],
         )
         async with STORE_LOCK:
             chat = CHATS.get(chat_id)

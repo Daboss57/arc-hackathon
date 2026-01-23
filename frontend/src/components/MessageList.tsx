@@ -70,9 +70,9 @@ function formatMessage(text: string): JSX.Element[] {
 }
 
 const SUGGESTIONS = [
-    { emoji: '💰', text: "What is my balance?" },
-    { emoji: '🛒', text: "List all vendors" },
-    { emoji: '📜', text: "Show my spending policies" },
+    { emoji: '🎯', text: 'Help me keep AI spend under $20/month.' },
+    { emoji: '⚡', text: 'Run the x402 paid API demo.' },
+    { emoji: '📜', text: 'Show my spending policies.' },
 ];
 
 export function MessageList({ messages, isLoading, onSuggestionClick }: MessageListProps) {
@@ -81,8 +81,8 @@ export function MessageList({ messages, isLoading, onSuggestionClick }: MessageL
             {messages.length === 0 && !isLoading && (
                 <div className="empty-state">
                     <div className="empty-icon">🤖</div>
-                    <h3>Welcome to AutoWealth Agent</h3>
-                    <p>Your AI-powered financial assistant with autonomous spending capabilities.</p>
+                    <h3>AutoWealth Spend Optimizer</h3>
+                    <p>Set a budget, approve guardrails, and let the agent pay per-use with x402.</p>
                     <div className="suggestions">
                         {SUGGESTIONS.map((s) => (
                             <button

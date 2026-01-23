@@ -1,6 +1,7 @@
 import { initiateDeveloperControlledWalletsClient } from '@circle-fin/developer-controlled-wallets';
 import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
+import { getTransactions, setTransactions } from '../lib/dataStore.js';
 import type { WalletInfo, Balance, Transaction, TransactionHistoryQuery } from './types.js';
 
 let circleClient: ReturnType<typeof initiateDeveloperControlledWalletsClient> | null = null;
@@ -35,6 +36,15 @@ const store: WalletStore = {
         lastUpdated: new Date(),
     },
 };
+
+export function hydrateTransactionsFromStore(): void {
+    const stored = getTransactions();
+    store.transactions = stored;
+}
+
+function persistTransactions(): void {
+    setTransactions(store.transactions);
+}
 
 export async function initializeWallet(): Promise<WalletInfo> {
     if (store.wallet) {
@@ -271,6 +281,7 @@ export async function recordTransaction(tx: Omit<Transaction, 'id' | 'createdAt'
     };
 
     store.transactions.unshift(transaction);
+    persistTransactions();
     return transaction;
 }
 
@@ -301,6 +312,7 @@ export async function updateTransactionStatus(
     if (txHash) tx.txHash = txHash;
     if (status === 'confirmed') tx.confirmedAt = new Date();
 
+    persistTransactions();
     return tx;
 }
 
@@ -391,4 +403,5 @@ export function resetStoreForTesting() {
         available: '0.00',
         lastUpdated: new Date(0), // Set to epoch to force refresh
     };
+    setTransactions([]);
 }

@@ -24,10 +24,18 @@ export async function executePayment(request: PaymentRequest): Promise<PaymentRe
         recipient: request.recipient,
         category: request.category,
         description: request.description,
-        metadata: request.metadata,
+        metadata: {
+            ...(request.metadata || {}),
+            userId: request.userId,
+        },
     });
 
-    const appliedRules = validation.results.map(r => r.policyName);
+    const appliedPolicies = validation.results.map(r => r.policyName);
+    const policyMeta = {
+        approved: validation.approved,
+        appliedPolicies,
+        blockedBy: validation.blockedBy,
+    };
 
     if (!validation.approved) {
         logger.warn('Payment rejected by policy', { paymentId, blockedBy: validation.blockedBy });
@@ -35,7 +43,7 @@ export async function executePayment(request: PaymentRequest): Promise<PaymentRe
             paymentId,
             status: 'failed',
             error: `Blocked by policy: ${validation.blockedBy}`,
-            policyResult: { passed: false, appliedRules, blockedBy: validation.blockedBy },
+            policyResult: { passed: false, appliedRules: appliedPolicies, blockedBy: validation.blockedBy },
         };
     }
 
@@ -45,7 +53,7 @@ export async function executePayment(request: PaymentRequest): Promise<PaymentRe
             paymentId,
             status: 'failed',
             error: 'Wallet not initialized',
-            policyResult: { passed: true, appliedRules },
+            policyResult: { passed: true, appliedRules: appliedPolicies },
         };
     }
 
@@ -68,6 +76,7 @@ export async function executePayment(request: PaymentRequest): Promise<PaymentRe
         status: 'pending',
         category: request.category,
         description: request.description,
+        policy: policyMeta,
         userId: request.userId,
     });
 
@@ -82,7 +91,7 @@ export async function executePayment(request: PaymentRequest): Promise<PaymentRe
                 paymentId,
                 status: 'failed',
                 error: transfer.error || 'Transfer failed',
-                policyResult: { passed: true, appliedRules },
+                policyResult: { passed: true, appliedRules: appliedPolicies },
             };
         }
 
@@ -104,7 +113,7 @@ export async function executePayment(request: PaymentRequest): Promise<PaymentRe
             paymentId,
             status: 'completed',
             txHash,
-            policyResult: { passed: true, appliedRules },
+            policyResult: { passed: true, appliedRules: appliedPolicies },
         };
     } catch (err) {
         await releaseFunds(request.amount);
@@ -115,7 +124,7 @@ export async function executePayment(request: PaymentRequest): Promise<PaymentRe
             paymentId,
             status: 'failed',
             error: String(err),
-            policyResult: { passed: true, appliedRules },
+            policyResult: { passed: true, appliedRules: appliedPolicies },
         };
     }
 }

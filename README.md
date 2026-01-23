@@ -1,10 +1,10 @@
 # AutoWealth Agent
 
-A Trustless Autonomous Buyer + Financial Advice & Spend Management System built on Arc blockchain with USDC.
+AI Spend Optimizer for autonomous commerce on Arc with USDC and x402.
 
 ## Overview
 
-AutoWealth is a trustless AI agent that provides financial guidance, enforces budgets, autonomously purchases services, and pays per-use onchain — all under transparent user-defined rules.
+AutoWealth is a trustless AI agent that proposes budget guardrails, lets users review and approve them, then autonomously pays per-use onchain — all under transparent, user-defined rules.
 
 ### Architecture
 
@@ -91,6 +91,12 @@ cd ai-service && npm run dev
 | Person 1 | Financial advisor logic + policy modeling |
 | Person 2 | Onchain treasury + micropayments (backend) |
 | Person 3 | Buyer logic + UI / demo polish |
+
+## Demo Focus
+
+- **Use case:** Keep AI API spend under a monthly budget while the agent pays per-use.
+- **Review flow:** Advisor proposes limits → user approves → policy enforces every payment.
+- **Proof:** Receipts show tx hash + policy that allowed the payment.
 
 ## Hackathon Tracks
 
