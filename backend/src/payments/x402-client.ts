@@ -8,6 +8,7 @@ import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
 import { validatePayment } from '../policy/engine.js';
 import { getSpendingAnalytics, getWallet, transferUsdc, recordTransaction } from '../treasury/wallet.service.js';
+import { parseAmount } from '../lib/amount.js';
 
 export interface X402FetchResult {
     success: boolean;
@@ -45,6 +46,13 @@ export async function x402Fetch(
         const initialResponse = await fetch(url, options);
 
         if (initialResponse.status !== 402) {
+            if (!initialResponse.ok) {
+                const errorBody = await initialResponse.text().catch(() => '');
+                return {
+                    success: false,
+                    error: `Upstream request failed (${initialResponse.status})${errorBody ? `: ${errorBody}` : ''}`,
+                };
+            }
             // No payment required
             const data = await initialResponse.json().catch(() => initialResponse.text());
             return { success: true, data, paymentMade: false };
@@ -71,17 +79,24 @@ export async function x402Fetch(
             return { success: false, error: 'Failed to parse payment requirements' };
         }
 
+        const parsedAmount = parseAmount(paymentRequirements.amount);
+        const recipient = typeof paymentRequirements.recipient === 'string' ? paymentRequirements.recipient.trim() : '';
+
+        if (!parsedAmount || parsedAmount <= 0 || !recipient) {
+            return { success: false, error: 'Invalid payment requirements received' };
+        }
+
         logger.info('402 Payment Required (Circle x402)', {
             url,
             amount: paymentRequirements.amount,
-            recipient: paymentRequirements.recipient,
+            recipient,
             userId
         });
 
         // Step 3: Validate against policies
         const policyCheck = await validatePayment({
             amount: paymentRequirements.amount,
-            recipient: paymentRequirements.recipient || new URL(url).hostname,
+            recipient,
             category: category || 'x402-api',
             description: `x402 payment for ${url}`,
             metadata: { userId, ...(metadata || {}) },
@@ -108,7 +123,7 @@ export async function x402Fetch(
         logger.info('Executing x402 payment via Circle transfer');
 
         const transferResult = await transferUsdc(
-            paymentRequirements.recipient,
+            recipient,
             paymentRequirements.amount,
             userId
         );
@@ -124,7 +139,7 @@ export async function x402Fetch(
         // Record the transaction for analytics
         await recordTransaction({
             from: wallet.address,
-            to: paymentRequirements.recipient,
+            to: recipient,
             amount: paymentRequirements.amount,
             txHash: transferResult.txHash || '',
             currency: 'USDC',
@@ -144,7 +159,7 @@ export async function x402Fetch(
         const paymentProof = Buffer.from(JSON.stringify({
             txHash: transferResult.txHash,
             from: wallet.address,
-            to: paymentRequirements.recipient,
+            to: recipient,
             amount: paymentRequirements.amount,
             timestamp: Date.now(),
             userId

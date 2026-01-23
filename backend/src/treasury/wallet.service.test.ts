@@ -203,8 +203,9 @@ describe('wallet.service', () => {
                 category: 'FOOD',
                 status: 'confirmed',
                 to: '0x123',
-                token: 'USDC',
-                type: 'transfer'
+                from: '0xabc',
+                txHash: '',
+                currency: 'USDC',
             });
 
             const analytics = await walletService.getSpendingAnalytics();
@@ -222,8 +223,9 @@ describe('wallet.service', () => {
                 category: 'Tech',
                 status: 'confirmed',
                 to: '0x123',
-                token: 'USDC',
-                type: 'transfer'
+                from: '0xabc',
+                txHash: '',
+                currency: 'USDC',
             });
 
             const analytics = await walletService.getSpendingAnalytics();

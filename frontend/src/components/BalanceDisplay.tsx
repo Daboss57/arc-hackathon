@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getBalance, type TreasuryBalance } from '../api/aiService';
 
 interface BalanceDisplayProps {
@@ -8,6 +8,8 @@ interface BalanceDisplayProps {
 export function BalanceDisplay({ refreshTrigger }: BalanceDisplayProps) {
     const [balance, setBalance] = useState<TreasuryBalance | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [animate, setAnimate] = useState(false);
+    const lastAmountRef = useRef<string | null>(null);
 
     useEffect(() => {
         const fetchBalance = async () => {
@@ -23,6 +25,17 @@ export function BalanceDisplay({ refreshTrigger }: BalanceDisplayProps) {
 
         fetchBalance();
     }, [refreshTrigger]);
+
+    useEffect(() => {
+        if (!balance?.amount) return;
+        if (lastAmountRef.current && lastAmountRef.current !== balance.amount) {
+            setAnimate(true);
+            const timeout = window.setTimeout(() => setAnimate(false), 500);
+            lastAmountRef.current = balance.amount;
+            return () => window.clearTimeout(timeout);
+        }
+        lastAmountRef.current = balance.amount;
+    }, [balance?.amount]);
 
     if (error) {
         return (
@@ -43,7 +56,7 @@ export function BalanceDisplay({ refreshTrigger }: BalanceDisplayProps) {
     }
 
     return (
-        <div className="balance-display">
+        <div className={`balance-display ${animate ? 'balance-updated' : ''}`}>
             <span className="balance-icon">💰</span>
             <div className="balance-info">
                 <span className="balance-amount">{balance.amount} {balance.currency}</span>

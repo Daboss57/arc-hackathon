@@ -31,7 +31,7 @@ export function SettingsPage({ userId, userEmail, settings: initialSettings, onS
         };
         const saved = await upsertUserSettings(payload);
         if (!saved) {
-            setError('Failed to save settings.');
+            setError('Failed to save settings. Check Supabase table permissions and schema.');
             return;
         }
         saveLocalSettings(saved);

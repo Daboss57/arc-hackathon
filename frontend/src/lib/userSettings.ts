@@ -54,9 +54,13 @@ export async function fetchUserSettings(userId: string): Promise<UserSettings | 
 }
 
 export async function upsertUserSettings(settings: UserSettings): Promise<UserSettings | null> {
+    const payload = {
+        ...settings,
+        updated_at: new Date().toISOString(),
+    };
     const { data, error } = await supabase
         .from('user_settings')
-        .upsert(settings, { onConflict: 'user_id' })
+        .upsert(payload, { onConflict: 'user_id' })
         .select('*')
         .single();
 

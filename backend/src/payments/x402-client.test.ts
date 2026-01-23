@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { x402Fetch, isX402Enabled } from './x402-client.js';
-import { config } from '../lib/config.js';
 import * as walletService from '../treasury/wallet.service.js';
 import * as policyEngine from '../policy/engine.js';
-import { initiateDeveloperControlledWalletsClient } from '@circle-fin/developer-controlled-wallets';
 
 // Mock dependencies
 vi.mock('../lib/config.js', () => ({
@@ -15,10 +13,14 @@ vi.mock('../lib/config.js', () => ({
     }
 }));
 
-vi.mock('../treasury/wallet.service.js');
-vi.mock('../policy/engine.js');
-vi.mock('@circle-fin/developer-controlled-wallets', () => ({
-    initiateDeveloperControlledWalletsClient: vi.fn()
+vi.mock('../treasury/wallet.service.js', () => ({
+    getWallet: vi.fn(),
+    transferUsdc: vi.fn(),
+    recordTransaction: vi.fn(),
+    getSpendingAnalytics: vi.fn()
+}));
+vi.mock('../policy/engine.js', () => ({
+    validatePayment: vi.fn()
 }));
 
 // Mock logger to suppress output during tests
@@ -35,18 +37,8 @@ const globalFetch = vi.fn();
 global.fetch = globalFetch;
 
 describe('x402-client', () => {
-    let mockCircleClient: any;
-
     beforeEach(() => {
         vi.resetAllMocks();
-
-        // Setup Circle Client Mock
-        mockCircleClient = {
-            signTypedData: vi.fn().mockResolvedValue({
-                data: { signature: '0xmockSignature' }
-            })
-        };
-        (initiateDeveloperControlledWalletsClient as any).mockReturnValue(mockCircleClient);
 
         // Setup Wallet Mock
         (walletService.getWallet as any).mockResolvedValue({
@@ -56,12 +48,24 @@ describe('x402-client', () => {
 
         // Setup Policy Mock
         (policyEngine.validatePayment as any).mockResolvedValue({
-            approved: true
+            approved: true,
+            results: []
         });
 
         // Setup Analytics Mock
         (walletService.getSpendingAnalytics as any).mockResolvedValue({
             warning: null
+        });
+
+        (walletService.transferUsdc as any).mockResolvedValue({
+            success: true,
+            transactionId: 'tx-1',
+            txHash: '0xhash'
+        });
+
+        (walletService.recordTransaction as any).mockResolvedValue({
+            id: 'tx-record',
+            status: 'confirmed'
         });
     });
 
@@ -83,7 +87,7 @@ describe('x402-client', () => {
     });
 
     describe('x402Fetch', () => {
-        it('should return success immediately if 402 is not returned', async () => {
+        it('should return success immediately if 402 is not returned and response is ok', async () => {
             globalFetch.mockResolvedValueOnce({
                 status: 200,
                 ok: true,
@@ -95,6 +99,19 @@ describe('x402-client', () => {
             expect(result.success).toBe(true);
             expect(result.paymentMade).toBe(false);
             expect(result.data).toEqual({ message: 'success' });
+        });
+
+        it('should return error if upstream response is not ok and not 402', async () => {
+            globalFetch.mockResolvedValueOnce({
+                status: 500,
+                ok: false,
+                text: async () => 'server error'
+            });
+
+            const result = await x402Fetch('https://api.example.com/data');
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('Upstream request failed');
         });
 
         it('should fail if wallet is not initialized', async () => {
@@ -144,8 +161,8 @@ describe('x402-client', () => {
                 recipient: '0xRecipient'
             }));
 
-            // Verify Circle Signing
-            expect(mockCircleClient.signTypedData).toHaveBeenCalled();
+            // Verify Transfer executed
+            expect(walletService.transferUsdc).toHaveBeenCalledWith('0xRecipient', '1.50', undefined);
 
             // Verify Second Fetch Request includes x-payment header
             expect(globalFetch).toHaveBeenCalledTimes(2);
@@ -180,23 +197,20 @@ describe('x402-client', () => {
             expect(result.policyBlocked).toBe(true);
             expect(result.error).toContain('Payment blocked by policy');
 
-            // Should NOT sign or fetch again
-            expect(mockCircleClient.signTypedData).not.toHaveBeenCalled();
+            // Should NOT transfer or fetch again
+            expect(walletService.transferUsdc).not.toHaveBeenCalled();
             expect(globalFetch).toHaveBeenCalledTimes(1);
         });
 
-        it('should fail if payment requirements execution fails (no signature)', async () => {
-            // Mock Circle failure
-            mockCircleClient.signTypedData.mockRejectedValueOnce(new Error('Signing failed'));
-
+        it('should fail on invalid payment requirements', async () => {
             globalFetch.mockResolvedValueOnce({
                 status: 402,
                 ok: false,
                 headers: {
                     get: () => {
                         const payload = JSON.stringify({
-                            amount: '1.00',
-                            recipient: '0xRecipient'
+                            amount: '0',
+                            recipient: ''
                         });
                         return Buffer.from(payload).toString('base64');
                     }
@@ -205,7 +219,7 @@ describe('x402-client', () => {
 
             const result = await x402Fetch('https://api.example.com/fail');
             expect(result.success).toBe(false);
-            expect(result.error).toContain('Failed to sign payment');
+            expect(result.error).toContain('Invalid payment requirements');
         });
     });
 });

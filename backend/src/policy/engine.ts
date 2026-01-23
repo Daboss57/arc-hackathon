@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import { logger } from '../lib/logger.js';
+import { parseAmount } from '../lib/amount.js';
 import { evaluateRule } from './rules.js';
 import { getPolicies, setPolicies } from '../lib/dataStore.js';
 import { hasUserApprovedOnce, isPaymentsPaused, isSafeModeEnabled, markUserApprovedOnce } from '../lib/safety.js';
@@ -71,6 +72,22 @@ export function deletePolicy(id: string): boolean {
 }
 
 export async function validatePayment(ctx: PaymentContext): Promise<ValidationSummary> {
+    const amount = parseAmount(ctx.amount);
+    if (!amount || amount <= 0) {
+        return {
+            approved: false,
+            blockedBy: 'Invalid Amount',
+            results: [
+                {
+                    passed: false,
+                    policyId: 'system',
+                    policyName: 'Invalid Amount',
+                    reason: 'Amount must be a positive number',
+                },
+            ],
+        };
+    }
+
     if (isPaymentsPaused()) {
         return {
             approved: false,

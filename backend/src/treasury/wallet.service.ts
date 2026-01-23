@@ -1,7 +1,8 @@
 import { initiateDeveloperControlledWalletsClient } from '@circle-fin/developer-controlled-wallets';
 import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
-import { getTransactions, setTransactions } from '../lib/dataStore.js';
+import { getPolicies, getTransactions, setTransactions } from '../lib/dataStore.js';
+import { parseAmount } from '../lib/amount.js';
 import type { WalletInfo, Balance, Transaction, TransactionHistoryQuery } from './types.js';
 
 let circleClient: ReturnType<typeof initiateDeveloperControlledWalletsClient> | null = null;
@@ -144,8 +145,13 @@ export async function getBalance(force = false): Promise<Balance> {
 }
 
 export async function reserveFunds(amount: string): Promise<boolean> {
-    const available = parseFloat(store.balance.available);
-    const toReserve = parseFloat(amount);
+    const available = parseAmount(store.balance.available);
+    const toReserve = parseAmount(amount);
+
+    if (available === null || toReserve === null || toReserve <= 0) {
+        logger.warn('Invalid reservation amount', { amount });
+        return false;
+    }
 
     if (toReserve > available) {
         logger.warn('Insufficient funds for reservation', {
@@ -164,11 +170,13 @@ export async function reserveFunds(amount: string): Promise<boolean> {
 }
 
 export async function releaseFunds(amount: string): Promise<void> {
-    const reserved = parseFloat(store.balance.reserved);
-    const toRelease = Math.min(parseFloat(amount), reserved);
+    const reserved = parseAmount(store.balance.reserved);
+    const parsedAmount = parseAmount(amount);
+    if (!reserved || !parsedAmount || parsedAmount <= 0) return;
+    const toRelease = Math.min(parsedAmount, reserved);
 
     store.balance.reserved = (reserved - toRelease).toFixed(2);
-    store.balance.available = (parseFloat(store.balance.available) + toRelease).toFixed(2);
+    store.balance.available = ((parseAmount(store.balance.available) || 0) + toRelease).toFixed(2);
     store.balance.lastUpdated = new Date();
 }
 
@@ -286,7 +294,7 @@ export async function recordTransaction(tx: Omit<Transaction, 'id' | 'createdAt'
 }
 
 export async function getTransactionHistory(query: TransactionHistoryQuery = {}, userId?: string): Promise<Transaction[]> {
-    const { limit = 50, offset = 0, status } = query;
+    const { limit = 50, offset = 0, status, startDate, endDate } = query;
 
     let filtered = store.transactions;
     if (userId) {
@@ -295,6 +303,13 @@ export async function getTransactionHistory(query: TransactionHistoryQuery = {},
 
     if (status) {
         filtered = filtered.filter(tx => tx.status === status);
+    }
+
+    if (startDate) {
+        filtered = filtered.filter(tx => (tx.confirmedAt ?? tx.createdAt) >= startDate);
+    }
+    if (endDate) {
+        filtered = filtered.filter(tx => (tx.confirmedAt ?? tx.createdAt) <= endDate);
     }
 
     return filtered.slice(offset, offset + limit);
@@ -346,22 +361,22 @@ export async function getSpendingAnalytics(userId?: string): Promise<SpendingAna
     }
 
     const dailySpend = confirmedTxs
-        .filter(tx => tx.createdAt >= dayStart)
-        .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+        .filter(tx => (tx.confirmedAt ?? tx.createdAt) >= dayStart)
+        .reduce((sum, tx) => sum + (parseAmount(tx.amount) || 0), 0);
 
     const monthlySpend = confirmedTxs
-        .filter(tx => tx.createdAt >= monthStart)
-        .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
+        .filter(tx => (tx.confirmedAt ?? tx.createdAt) >= monthStart)
+        .reduce((sum, tx) => sum + (parseAmount(tx.amount) || 0), 0);
 
     const byCategory: Record<string, number> = {};
-    for (const tx of confirmedTxs.filter(t => t.createdAt >= monthStart)) {
+    for (const tx of confirmedTxs.filter(t => (t.confirmedAt ?? t.createdAt) >= monthStart)) {
         const cat = tx.category || 'uncategorized';
-        byCategory[cat] = (byCategory[cat] || 0) + parseFloat(tx.amount);
+        byCategory[cat] = (byCategory[cat] || 0) + (parseAmount(tx.amount) || 0);
     }
 
-    // Default limits from policy
-    const dailyLimit = 50;
-    const monthlyBudget = 200;
+    const policyLimits = getPolicySpendingLimits();
+    const dailyLimit = policyLimits.dailyLimit;
+    const monthlyBudget = policyLimits.monthlyBudget;
 
     const dailyPercent = (dailySpend / dailyLimit) * 100;
     const monthlyPercent = (monthlySpend / monthlyBudget) * 100;
@@ -404,4 +419,32 @@ export function resetStoreForTesting() {
         lastUpdated: new Date(0), // Set to epoch to force refresh
     };
     setTransactions([]);
+}
+
+function getPolicySpendingLimits(): { dailyLimit: number; monthlyBudget: number } {
+    const policies = getPolicies().filter(policy => policy.enabled);
+    let dailyLimit: number | null = null;
+    let monthlyBudget: number | null = null;
+
+    for (const policy of policies) {
+        for (const rule of policy.rules || []) {
+            if (rule.type === 'dailyLimit') {
+                const limit = parseAmount((rule.params as { limit?: number }).limit);
+                if (limit && limit > 0) {
+                    dailyLimit = dailyLimit === null ? limit : Math.min(dailyLimit, limit);
+                }
+            }
+            if (rule.type === 'monthlyBudget') {
+                const budget = parseAmount((rule.params as { budget?: number }).budget);
+                if (budget && budget > 0) {
+                    monthlyBudget = monthlyBudget === null ? budget : Math.min(monthlyBudget, budget);
+                }
+            }
+        }
+    }
+
+    return {
+        dailyLimit: dailyLimit ?? 50,
+        monthlyBudget: monthlyBudget ?? 200,
+    };
 }
