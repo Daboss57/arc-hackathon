@@ -14,6 +14,7 @@ interface AdvisorPanelProps {
     refreshKey?: number;
     userId: string;
     onApplied?: () => void;
+    defaultGoal?: number | null;
 }
 
 interface Recommendation {
@@ -95,7 +96,7 @@ function buildRecommendation(goalMonthly: number, analytics: SpendingAnalytics |
     };
 }
 
-export function AdvisorPanel({ refreshKey, userId, onApplied }: AdvisorPanelProps) {
+export function AdvisorPanel({ refreshKey, userId, onApplied, defaultGoal }: AdvisorPanelProps) {
     const [policies, setPolicies] = useState<Policy[]>([]);
     const [analytics, setAnalytics] = useState<SpendingAnalytics | null>(null);
     const [goal, setGoal] = useState(DEFAULT_GOAL);
@@ -134,6 +135,12 @@ export function AdvisorPanel({ refreshKey, userId, onApplied }: AdvisorPanelProp
             active = false;
         };
     }, [refreshKey, userId]);
+
+    useEffect(() => {
+        if (defaultGoal && !Number.isNaN(defaultGoal)) {
+            setGoal(String(defaultGoal));
+        }
+    }, [defaultGoal]);
 
     const limits = useMemo(() => extractLimits(policies), [policies]);
 

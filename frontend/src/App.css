@@ -40,6 +40,92 @@ body {
     var(--bg-primary);
 }
 
+.app-shell {
+  width: 100%;
+  max-width: min(1680px, 96vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.app-body {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+/* Top Navigation */
+.top-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 20px;
+  border-radius: 20px;
+  background: rgba(22, 22, 30, 0.9);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-icon {
+  font-size: 1.4rem;
+}
+
+.brand h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.brand p {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.nav-tabs {
+  display: flex;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 4px;
+}
+
+.nav-tabs button {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.nav-tabs button.active {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--text-primary);
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-pill {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
 /* Chat Window */
 .chat-window {
   width: 100%;
@@ -56,6 +142,108 @@ body {
     0 0 0 1px rgba(255, 255, 255, 0.05);
   overflow: hidden;
   font-size: calc(1rem * var(--ui-scale));
+}
+
+/* Auth */
+.auth-page {
+  width: 100%;
+  min-height: 90vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.auth-card {
+  width: min(420px, 90vw);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
+}
+
+.auth-header h1 {
+  margin: 0 0 6px 0;
+  font-size: 1.4rem;
+}
+
+.auth-header p {
+  margin: 0 0 20px 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.auth-form input {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.auth-footer {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.link-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+/* Settings */
+.settings-page {
+  width: min(1100px, 94vw);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.settings-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.settings-panel input[type='text'],
+.settings-panel input[type='number'],
+.settings-panel input[type='range'] {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.settings-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.range-value {
+  font-size: 0.7rem;
+  color: var(--text-muted);
 }
 
 /* Header */
@@ -1285,6 +1473,7 @@ body {
   border: 1px solid var(--border-color);
   background: var(--bg-tertiary);
   font-size: 0.75rem;
+  cursor: pointer;
 }
 
 .receipt-header {
@@ -1307,6 +1496,22 @@ body {
 
 .receipt-date {
   color: var(--text-muted);
+}
+
+.receipt-item.expanded {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.15);
+}
+
+.receipt-details {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .status-pill {
@@ -1388,6 +1593,16 @@ body {
 
   .side-panel {
     padding-right: 0;
+  }
+
+  .top-nav {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .nav-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .chat-header {

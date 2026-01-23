@@ -156,8 +156,9 @@ export async function sendMessage(
     return response.json();
 }
 
-export async function getBalance(): Promise<TreasuryBalance> {
-    const response = await fetch(`${BACKEND_URL}/api/treasury/balance`);
+export async function getBalance(force = false): Promise<TreasuryBalance> {
+    const query = force ? '?force=true' : '';
+    const response = await fetch(`${BACKEND_URL}/api/treasury/balance${query}`);
     if (!response.ok) throw new Error('Failed to get balance');
     return response.json();
 }

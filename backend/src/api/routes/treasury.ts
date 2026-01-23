@@ -10,9 +10,10 @@ import {
 
 const router = Router();
 
-router.get('/balance', async (_req, res) => {
+router.get('/balance', async (req, res) => {
     try {
-        const balance = await getBalance();
+        const force = String(req.query.force || '').toLowerCase() === 'true';
+        const balance = await getBalance(force);
         res.json(balance);
     } catch (err) {
         res.status(500).json({ error: String(err) });

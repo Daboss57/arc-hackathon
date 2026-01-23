@@ -2,31 +2,31 @@
   "policies": [
     {
       "id": "af9544cb-7534-46e7-98ea-517f166795e1",
-      "name": "Default Spending Limits",
-      "description": "Basic safety limits for autonomous spending",
+      "name": null,
+      "description": null,
       "enabled": true,
       "rules": [
         {
-          "type": "maxPerTransaction",
           "params": {
             "max": 10
-          }
+          },
+          "type": "maxPerTransaction"
         },
         {
           "type": "dailyLimit",
           "params": {
-            "limit": 50
+            "limit": 10
           }
         },
         {
-          "type": "monthlyBudget",
           "params": {
-            "budget": 200
-          }
+            "budget": 100
+          },
+          "type": "monthlyBudget"
         }
       ],
       "createdAt": "2026-01-23T06:34:34.248Z",
-      "updatedAt": "2026-01-23T06:34:34.248Z"
+      "updatedAt": "2026-01-23T07:27:23.124Z"
     },
     {
       "id": "be575053-0d8d-42c8-a49c-5f07ddabd582",
@@ -82,6 +82,27 @@
     }
   ],
   "transactions": [
+    {
+      "from": "0x73b28badd68212ce5e26e6d87c21113501775a65",
+      "to": "0x03972eb60d23a16edf247a521b83153ceb70f9e9",
+      "amount": "0.30",
+      "txHash": "",
+      "currency": "USDC",
+      "status": "confirmed",
+      "category": "vendor-purchase",
+      "description": "x402 payment for /api/vendors/techstore/purchase/ts-001",
+      "policy": {
+        "approved": true,
+        "appliedPolicies": [
+          null,
+          "Advisor Recommended Limits",
+          "AI Spending Limit"
+        ]
+      },
+      "userId": "demo-user",
+      "id": "tx_1769153259467_lixfrw",
+      "createdAt": "2026-01-23T07:27:39.467Z"
+    },
     {
       "from": "0x73b28badd68212ce5e26e6d87c21113501775a65",
       "to": "0x03972eb60d23a16edf247a521b83153ceb70f9e9",

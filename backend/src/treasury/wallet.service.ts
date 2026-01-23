@@ -136,8 +136,8 @@ async function refreshBalance(): Promise<void> {
     }
 }
 
-export async function getBalance(): Promise<Balance> {
-    if (config.CIRCLE_WALLET_ID && Date.now() - store.balance.lastUpdated.getTime() > 10000) {
+export async function getBalance(force = false): Promise<Balance> {
+    if (config.CIRCLE_WALLET_ID && (force || Date.now() - store.balance.lastUpdated.getTime() > 10000)) {
         await refreshBalance();
     }
     return store.balance;

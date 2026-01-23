@@ -632,6 +632,77 @@ def extract_metadata(
     return metadata
 
 
+def extract_text(response: types.GenerateContentResponse) -> str:
+    if not response.candidates:
+        return ""
+    candidate = response.candidates[0]
+    if not candidate.content or not candidate.content.parts:
+        return ""
+    parts = [part.text for part in candidate.content.parts if getattr(part, "text", None)]
+    return "".join(parts).strip()
+
+
+def build_tool_fallback(executed_tools: List[Dict[str, Any]]) -> str:
+    if not executed_tools:
+        return ""
+
+    failed_tools = [t for t in executed_tools if not t["result"].get("ok", True)]
+    successful_tools = [t for t in executed_tools if t["result"].get("ok", True)]
+
+    parts: List[str] = []
+    if failed_tools:
+        for tool in failed_tools:
+            error = tool["result"].get("error", "Unknown error")
+            error_str = str(error) if not isinstance(error, str) else error
+            if "policy" in error_str.lower() or "blocked" in error_str.lower():
+                parts.append(f"⚠️ Action blocked: {error_str}")
+            else:
+                parts.append(f"❌ {tool['name']} failed: {error_str}")
+
+    if successful_tools:
+        for tool in successful_tools:
+            data = tool["result"].get("data", {})
+            name = tool["name"]
+
+            if not isinstance(data, dict):
+                continue
+
+            if name == "purchase_product":
+                if data.get("success"):
+                    order = data.get("order", {})
+                    product = order.get("product", {})
+                    parts.append(
+                        f"✅ Purchased **{product.get('name', 'item')}** for "
+                        f"**{product.get('price', '?')} USDC** from {order.get('vendor', 'vendor')}"
+                    )
+                elif data.get("paymentMade"):
+                    parts.append(f"✅ Payment of {data.get('paymentAmount', '?')} USDC completed")
+
+            elif name == "get_treasury_balance":
+                amount = data.get("amount", data.get("available"))
+                if amount:
+                    parts.append(f"💰 Balance: **{amount} USDC**")
+
+            elif name == "list_vendors":
+                vendors = data.get("vendors", [])
+                if vendors:
+                    parts.append(f"📋 Found {len(vendors)} vendors available")
+
+            elif name in ("create_policy", "update_policy", "delete_policy"):
+                if name == "create_policy":
+                    parts.append(f"✅ Policy created: {data.get('name', 'unnamed')}")
+                elif name == "delete_policy":
+                    parts.append("✅ Policy deleted successfully")
+                else:
+                    parts.append(f"✅ Policy updated: {data.get('name', 'unnamed')}")
+
+    if parts:
+        return "\n".join(parts)
+
+    tool_names = [t["name"] for t in executed_tools]
+    return f"Completed: {', '.join(tool_names)}. Expand '🔧 tools executed' for details."
+
+
 async def run_tool_loop(
     contents: List[types.Content],
     config: types.GenerateContentConfig,
@@ -759,71 +830,11 @@ async def generate_assistant_message(
     if executed_tools:
         metadata["executed_tools"] = executed_tools
 
-    content = response.text or ""
+    content = extract_text(response)
     
     # If no text response but tools were executed, generate a summary
     if not content and executed_tools:
-        failed_tools = [t for t in executed_tools if not t["result"].get("ok", True)]
-        successful_tools = [t for t in executed_tools if t["result"].get("ok", True)]
-        
-        parts = []
-        if failed_tools:
-            for tool in failed_tools:
-                error = tool["result"].get("error", "Unknown error")
-                # Convert error to string if it's a dict or other type
-                error_str = str(error) if not isinstance(error, str) else error
-                if "policy" in error_str.lower() or "blocked" in error_str.lower():
-                    parts.append(f"⚠️ Action blocked: {error_str}")
-                else:
-                    parts.append(f"❌ {tool['name']} failed: {error_str}")
-        
-        if successful_tools:
-            for tool in successful_tools:
-                data = tool["result"].get("data", {})
-                name = tool["name"]
-                
-                if not isinstance(data, dict):
-                    continue
-                    
-                # Handle purchase_product (x402 response)
-                if name == "purchase_product":
-                    if data.get("success"):
-                        order = data.get("order", {})
-                        product = order.get("product", {})
-                        parts.append(
-                            f"✅ Purchased **{product.get('name', 'item')}** for "
-                            f"**{product.get('price', '?')} USDC** from {order.get('vendor', 'vendor')}"
-                        )
-                    elif data.get("paymentMade"):
-                        parts.append(f"✅ Payment of {data.get('paymentAmount', '?')} USDC completed")
-                
-                # Handle balance queries
-                elif name == "get_treasury_balance":
-                    amount = data.get("amount", data.get("available"))
-                    if amount:
-                        parts.append(f"💰 Balance: **{amount} USDC**")
-                
-                # Handle vendor listings
-                elif name == "list_vendors":
-                    vendors = data.get("vendors", [])
-                    if vendors:
-                        parts.append(f"📋 Found {len(vendors)} vendors available")
-                
-                # Handle policy operations
-                elif name in ("create_policy", "update_policy", "delete_policy"):
-                    if name == "create_policy":
-                        parts.append(f"✅ Policy created: {data.get('name', 'unnamed')}")
-                    elif name == "delete_policy":
-                        parts.append("✅ Policy deleted successfully")
-                    else:
-                        parts.append(f"✅ Policy updated: {data.get('name', 'unnamed')}")
-        
-        if parts:
-            content = "\n".join(parts)
-        else:
-            # Last resort: summarize what tools ran
-            tool_names = [t["name"] for t in executed_tools]
-            content = f"Completed: {', '.join(tool_names)}. Expand '🔧 tools executed' for details."
+        content = build_tool_fallback(executed_tools)
     
     return {"content": content, "metadata": metadata or None}
 
@@ -1012,16 +1023,29 @@ async def create_message_stream(
             return
 
         if not full_text:
-            yield f"data: {json.dumps({'type': 'error', 'error': 'No response generated'})}\n\n"
-            return
+            fallback = build_tool_fallback(executed_tools)
+            if not fallback:
+                response = await asyncio.to_thread(
+                    AgentClient.models.generate_content,
+                    model=model,
+                    contents=contents,
+                    config=stream_config,
+                )
+                fallback = extract_text(response)
+
+            if fallback:
+                yield f"data: {json.dumps({'type': 'delta', 'text': fallback})}\n\n"
+                full_text = fallback
+            else:
+                yield f"data: {json.dumps({'type': 'error', 'error': 'No response generated'})}\n\n"
+                return
 
         async with STORE_LOCK:
             current_chat = CHATS.get(chat_id)  # Renamed to avoid shadowing
             if not current_chat:
                 yield f"data: {json.dumps({'type': 'error', 'error': 'Chat not found'})}\n\n"
                 return
-            assistant_message = append_message(current_chat, "assistant", full_text, metadata)
-
+            assistant_message = append_message(chat, "assistant", full_text, metadata)
 
         yield f"data: {json.dumps({'type': 'done', 'message': assistant_message})}\n\n"
 

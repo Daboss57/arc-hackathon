@@ -14,9 +14,12 @@ import { PolicySimulationPanel } from './PolicySimulationPanel';
 import { VendorComparisonPanel } from './VendorComparisonPanel';
 import { MarketplacePanel } from './MarketplacePanel';
 
-const USER_ID = 'demo-user';
+interface ChatWindowProps {
+    userId: string;
+    defaultMonthlyBudget?: number | null;
+}
 
-export function ChatWindow() {
+export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
     const [chatId, setChatId] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -28,7 +31,7 @@ export function ChatWindow() {
     useEffect(() => {
         const initChat = async () => {
             try {
-                const chat = await createChat(USER_ID, 'AutoWealth Demo');
+                const chat = await createChat(userId, 'AutoWealth Demo');
                 setChatId(chat.id);
             } catch (err) {
                 setError('Failed to initialize chat. Make sure the AI service is running on port 3002.');
@@ -151,15 +154,20 @@ export function ChatWindow() {
                 </section>
 
                 <aside className="side-panel">
-                    <AdvisorPanel refreshKey={refreshKey} userId={USER_ID} onApplied={() => setRefreshKey((t) => t + 1)} />
-                    <SafetyControlsPanel refreshKey={refreshKey} userId={USER_ID} onChange={() => setRefreshKey((t) => t + 1)} />
+                    <AdvisorPanel
+                        refreshKey={refreshKey}
+                        userId={userId}
+                        defaultGoal={defaultMonthlyBudget}
+                        onApplied={() => setRefreshKey((t) => t + 1)}
+                    />
+                    <SafetyControlsPanel refreshKey={refreshKey} userId={userId} onChange={() => setRefreshKey((t) => t + 1)} />
                     <PolicyCockpit refreshKey={refreshKey} onPolicyChange={() => setRefreshKey((t) => t + 1)} />
-                    <AnalyticsPanel refreshKey={refreshKey} userId={USER_ID} />
-                    <PolicySimulationPanel userId={USER_ID} />
-                    <MarketplacePanel userId={USER_ID} onPurchase={() => setRefreshKey((t) => t + 1)} />
+                    <AnalyticsPanel refreshKey={refreshKey} userId={userId} />
+                    <PolicySimulationPanel userId={userId} />
+                    <MarketplacePanel userId={userId} onPurchase={() => setRefreshKey((t) => t + 1)} />
                     <VendorComparisonPanel />
-                    <X402DemoPanel userId={USER_ID} onPaymentComplete={() => setRefreshKey((t) => t + 1)} />
-                    <ReceiptsPanel refreshKey={refreshKey} userId={USER_ID} />
+                    <X402DemoPanel userId={userId} onPaymentComplete={() => setRefreshKey((t) => t + 1)} />
+                    <ReceiptsPanel refreshKey={refreshKey} userId={userId} />
                 </aside>
             </div>
         </div>

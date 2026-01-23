@@ -12,7 +12,7 @@ export function BalanceDisplay({ refreshTrigger }: BalanceDisplayProps) {
     useEffect(() => {
         const fetchBalance = async () => {
             try {
-                const data = await getBalance();
+                const data = await getBalance(Boolean(refreshTrigger));
                 setBalance(data);
                 setError(null);
             } catch (err) {
