@@ -839,6 +839,47 @@ async def generate_assistant_message(
     return {"content": content, "metadata": metadata or None}
 
 
+async def generate_chat_title(message_text: str, model: str) -> str:
+    if not AgentClient:
+        return message_text[:40].strip() or "New Chat"
+
+    prompt = (
+        "Create a short 3-5 word title for this conversation. "
+        "Use title case. No quotes.\n\n"
+        f"Conversation: {message_text}"
+    )
+    response = await asyncio.to_thread(
+        AgentClient.models.generate_content,
+        model=model,
+        contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
+        config=types.GenerateContentConfig(
+            max_output_tokens=20,
+            tools=[],
+        ),
+    )
+    title = extract_text(response)
+    if not title:
+        return message_text[:40].strip() or "New Chat"
+    return title.replace('"', '').replace("'", '').strip()[:60]
+
+
+async def maybe_set_chat_title(chat_id: str, seed_text: str, model: str) -> None:
+    if not seed_text:
+        return
+    async with STORE_LOCK:
+        chat = CHATS.get(chat_id)
+        if not chat or chat.get("title"):
+            return
+
+    title = await generate_chat_title(seed_text, model)
+    async with STORE_LOCK:
+        chat = CHATS.get(chat_id)
+        if not chat or chat.get("title"):
+            return
+        chat["title"] = title
+        chat["updated_at"] = now_iso()
+
+
 ## Streaming helper is implemented inline in the SSE endpoint to avoid returning values from an async generator.
 
 
@@ -913,8 +954,6 @@ async def create_message(
         message_snapshot = list(chat["messages"])
         system_prompt = chat["system_prompt"]
         model = request.model or chat["model"] or DEFAULT_MODEL
-        chat_user_id = chat["user_id"]
-        chat_user_id = chat["user_id"]
 
     assistant_message = None
     if request.respond and request.role == "user":
@@ -937,6 +976,8 @@ async def create_message(
                 assistant["content"],
                 assistant["metadata"],
             )
+        if message_snapshot:
+            await maybe_set_chat_title(chat_id, message_snapshot[0]["content"], model)
 
     return {
         "chat_id": chat_id,
@@ -1045,9 +1086,12 @@ async def create_message_stream(
             if not current_chat:
                 yield f"data: {json.dumps({'type': 'error', 'error': 'Chat not found'})}\n\n"
                 return
-            assistant_message = append_message(chat, "assistant", full_text, metadata)
+            assistant_message = append_message(current_chat, "assistant", full_text, metadata)
 
         yield f"data: {json.dumps({'type': 'done', 'message': assistant_message})}\n\n"
+
+        if message_snapshot:
+            await maybe_set_chat_title(chat_id, message_snapshot[0]["content"], model)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

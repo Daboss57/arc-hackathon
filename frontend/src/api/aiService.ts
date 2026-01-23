@@ -143,6 +143,12 @@ export async function createChat(userId: string, title?: string): Promise<Chat> 
     return response.json();
 }
 
+export async function listChats(userId: string): Promise<Chat[]> {
+    const response = await fetch(`${AI_SERVICE_URL}/api/users/${userId}/chats`);
+    if (!response.ok) throw new Error('Failed to load chats');
+    return response.json();
+}
+
 export async function sendMessage(
     chatId: string,
     content: string

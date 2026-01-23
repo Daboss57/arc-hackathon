@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createChat, sendMessageStream, type Message } from '../api/aiService';
+import { createChat, getMessages, listChats, sendMessageStream, type Chat, type Message } from '../api/aiService';
 import { BalanceDisplay } from './BalanceDisplay';
 import { MessageInput } from './MessageInput';
 import { MessageList } from './MessageList';
@@ -13,6 +13,7 @@ import { SafetyControlsPanel } from './SafetyControlsPanel';
 import { PolicySimulationPanel } from './PolicySimulationPanel';
 import { VendorComparisonPanel } from './VendorComparisonPanel';
 import { MarketplacePanel } from './MarketplacePanel';
+import { ChatList } from './ChatList';
 
 interface ChatWindowProps {
     userId: string;
@@ -22,24 +23,74 @@ interface ChatWindowProps {
 export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
     const [chatId, setChatId] = useState<string | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
+    const [chats, setChats] = useState<Chat[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [refreshKey, setRefreshKey] = useState(0);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // Initialize chat on mount
+    // Initialize chats on mount
     useEffect(() => {
         const initChat = async () => {
             try {
-                const chat = await createChat(userId, 'AutoWealth Demo');
-                setChatId(chat.id);
+                const list = await listChats(userId);
+                const sorted = [...list].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+                setChats(sorted);
+
+                const lastChatId = localStorage.getItem(`autowealth-active-chat:${userId}`);
+                const match = list.find((item) => item.id === lastChatId);
+                if (match) {
+                    setChatId(match.id);
+                } else if (list.length > 0) {
+                    setChatId(list[0].id);
+                } else {
+                    const chat = await createChat(userId);
+                    setChatId(chat.id);
+                    setChats([chat]);
+                }
             } catch (err) {
                 setError('Failed to initialize chat. Make sure the AI service is running on port 3002.');
                 console.error(err);
             }
         };
         initChat();
-    }, []);
+    }, [userId]);
+
+    useEffect(() => {
+        const loadMessages = async () => {
+            if (!chatId) return;
+            try {
+                const history = await getMessages(chatId);
+                setMessages(history);
+                localStorage.setItem(`autowealth-active-chat:${userId}`, chatId);
+                setError(null);
+            } catch (err) {
+                setError('Failed to load chat history.');
+                console.error(err);
+            }
+        };
+        loadMessages();
+    }, [chatId, userId]);
+
+    const handleCreateChat = useCallback(async () => {
+        try {
+            const chat = await createChat(userId);
+            setChats((prev) => [chat, ...prev]);
+            setChatId(chat.id);
+        } catch (err) {
+            setError('Failed to create chat.');
+        }
+    }, [userId]);
+
+    const refreshChatList = useCallback(async () => {
+        try {
+            const list = await listChats(userId);
+            const sorted = [...list].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+            setChats(sorted);
+        } catch (err) {
+            // Ignore list refresh errors
+        }
+    }, [userId]);
 
     // Scroll to bottom when messages change
     useEffect(() => {
@@ -90,6 +141,7 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
                         )
                     );
                     setRefreshKey((t) => t + 1);
+                    refreshChatList();
                     break;
                 }
                 if (event.type === 'error') {
@@ -130,27 +182,37 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
 
             <div className="workspace">
                 <section className="chat-panel">
-                    <QuickActions onAction={handleSend} disabled={isLoading || !chatId} />
-
-                    {error && (
-                        <div className="error-banner">
-                            <span>⚠️ {error}</span>
-                            <button onClick={() => setError(null)}>✕</button>
-                        </div>
-                    )}
-
-                    <main className="chat-main">
-                        <MessageList
-                            messages={messages}
-                            isLoading={isLoading}
-                            onSuggestionClick={handleSend}
+                    <div className="chat-layout">
+                        <ChatList
+                            chats={chats}
+                            activeChatId={chatId}
+                            onSelect={setChatId}
+                            onCreate={handleCreateChat}
                         />
-                        <div ref={messagesEndRef} />
-                    </main>
+                        <div className="chat-content">
+                            <QuickActions onAction={handleSend} disabled={isLoading || !chatId} />
 
-                    <footer className="chat-footer">
-                        <MessageInput onSend={handleSend} disabled={isLoading || !chatId} />
-                    </footer>
+                            {error && (
+                                <div className="error-banner">
+                                    <span>⚠️ {error}</span>
+                                    <button onClick={() => setError(null)}>✕</button>
+                                </div>
+                            )}
+
+                            <main className="chat-main">
+                                <MessageList
+                                    messages={messages}
+                                    isLoading={isLoading}
+                                    onSuggestionClick={handleSend}
+                                />
+                                <div ref={messagesEndRef} />
+                            </main>
+
+                            <footer className="chat-footer">
+                                <MessageInput onSend={handleSend} disabled={isLoading || !chatId} />
+                            </footer>
+                        </div>
+                    </div>
                 </section>
 
                 <aside className="side-panel">

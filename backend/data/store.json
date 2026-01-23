@@ -1,34 +1,6 @@
 {
   "policies": [
     {
-      "id": "af9544cb-7534-46e7-98ea-517f166795e1",
-      "name": null,
-      "description": null,
-      "enabled": true,
-      "rules": [
-        {
-          "params": {
-            "max": 10
-          },
-          "type": "maxPerTransaction"
-        },
-        {
-          "type": "dailyLimit",
-          "params": {
-            "limit": 10
-          }
-        },
-        {
-          "params": {
-            "budget": 100
-          },
-          "type": "monthlyBudget"
-        }
-      ],
-      "createdAt": "2026-01-23T06:34:34.248Z",
-      "updatedAt": "2026-01-23T07:27:23.124Z"
-    },
-    {
       "id": "be575053-0d8d-42c8-a49c-5f07ddabd582",
       "name": "Advisor Recommended Limits",
       "description": "AutoWealth advisor recommended spending limits.",

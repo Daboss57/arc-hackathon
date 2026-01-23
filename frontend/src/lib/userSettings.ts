@@ -20,6 +20,26 @@ export const DEFAULT_SETTINGS: UserSettings = {
     updated_at: null,
 };
 
+const STORAGE_PREFIX = 'autowealth-settings';
+
+export function loadLocalSettings(userId: string): UserSettings | null {
+    try {
+        const raw = localStorage.getItem(`${STORAGE_PREFIX}:${userId}`);
+        if (!raw) return null;
+        return JSON.parse(raw) as UserSettings;
+    } catch {
+        return null;
+    }
+}
+
+export function saveLocalSettings(settings: UserSettings): void {
+    try {
+        localStorage.setItem(`${STORAGE_PREFIX}:${settings.user_id}`, JSON.stringify(settings));
+    } catch {
+        // Ignore local storage failures
+    }
+}
+
 export async function fetchUserSettings(userId: string): Promise<UserSettings | null> {
     const { data, error } = await supabase
         .from('user_settings')

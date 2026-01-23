@@ -1,36 +1,26 @@
 import { useEffect, useState } from 'react';
 import { updateSafetyStatus } from '../api/aiService';
-import { DEFAULT_SETTINGS, fetchUserSettings, upsertUserSettings, type UserSettings } from '../lib/userSettings';
+import { DEFAULT_SETTINGS, saveLocalSettings, upsertUserSettings, type UserSettings } from '../lib/userSettings';
 
 interface SettingsPageProps {
     userId: string;
     userEmail?: string | null;
+    settings?: UserSettings;
     onSettingsChange?: (settings: UserSettings) => void;
 }
 
-export function SettingsPage({ userId, userEmail, onSettingsChange }: SettingsPageProps) {
-    const [settings, setSettings] = useState<UserSettings>({ ...DEFAULT_SETTINGS, user_id: userId });
+export function SettingsPage({ userId, userEmail, settings: initialSettings, onSettingsChange }: SettingsPageProps) {
+    const [settings, setSettings] = useState<UserSettings>(
+        initialSettings ? { ...DEFAULT_SETTINGS, ...initialSettings, user_id: userId } : { ...DEFAULT_SETTINGS, user_id: userId }
+    );
     const [status, setStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        let active = true;
-        const load = async () => {
-            const data = await fetchUserSettings(userId);
-            if (!active) return;
-            if (data) {
-                setSettings({
-                    ...DEFAULT_SETTINGS,
-                    ...data,
-                    user_id: userId,
-                });
-            }
-        };
-        load();
-        return () => {
-            active = false;
-        };
-    }, [userId]);
+        if (initialSettings) {
+            setSettings({ ...DEFAULT_SETTINGS, ...initialSettings, user_id: userId });
+        }
+    }, [initialSettings, userId]);
 
     const handleSave = async () => {
         setStatus(null);
@@ -44,6 +34,7 @@ export function SettingsPage({ userId, userEmail, onSettingsChange }: SettingsPa
             setError('Failed to save settings.');
             return;
         }
+        saveLocalSettings(saved);
         await updateSafetyStatus(
             {
                 safeMode: Boolean(settings.safe_mode),
@@ -70,7 +61,11 @@ export function SettingsPage({ userId, userEmail, onSettingsChange }: SettingsPa
                     <input
                         type="text"
                         value={settings.display_name || ''}
-                        onChange={(e) => setSettings((prev) => ({ ...prev, display_name: e.target.value }))}
+                        onChange={(e) => {
+                            const next = { ...settings, display_name: e.target.value };
+                            setSettings(next);
+                            onSettingsChange?.(next);
+                        }}
                         placeholder="Your name"
                     />
                 </label>
@@ -82,7 +77,11 @@ export function SettingsPage({ userId, userEmail, onSettingsChange }: SettingsPa
                         min="1"
                         step="0.5"
                         value={settings.monthly_budget ?? 20}
-                        onChange={(e) => setSettings((prev) => ({ ...prev, monthly_budget: Number(e.target.value) }))}
+                        onChange={(e) => {
+                            const next = { ...settings, monthly_budget: Number(e.target.value) };
+                            setSettings(next);
+                            onSettingsChange?.(next);
+                        }}
                     />
                 </label>
 
@@ -94,7 +93,12 @@ export function SettingsPage({ userId, userEmail, onSettingsChange }: SettingsPa
                         max="1.3"
                         step="0.05"
                         value={settings.ui_scale ?? 1}
-                        onChange={(e) => setSettings((prev) => ({ ...prev, ui_scale: Number(e.target.value) }))}
+                        onChange={(e) => {
+                            const next = { ...settings, ui_scale: Number(e.target.value) };
+                            setSettings(next);
+                            onSettingsChange?.(next);
+                            saveLocalSettings(next);
+                        }}
                     />
                     <span className="range-value">{(settings.ui_scale ?? 1).toFixed(2)}×</span>
                 </label>
@@ -120,7 +124,11 @@ export function SettingsPage({ userId, userEmail, onSettingsChange }: SettingsPa
                     <input
                         type="checkbox"
                         checked={Boolean(settings.safe_mode)}
-                        onChange={(e) => setSettings((prev) => ({ ...prev, safe_mode: e.target.checked }))}
+                        onChange={(e) => {
+                            const next = { ...settings, safe_mode: e.target.checked };
+                            setSettings(next);
+                            onSettingsChange?.(next);
+                        }}
                     />
                 </label>
 
@@ -132,7 +140,11 @@ export function SettingsPage({ userId, userEmail, onSettingsChange }: SettingsPa
                     <input
                         type="checkbox"
                         checked={Boolean(settings.auto_budget)}
-                        onChange={(e) => setSettings((prev) => ({ ...prev, auto_budget: e.target.checked }))}
+                        onChange={(e) => {
+                            const next = { ...settings, auto_budget: e.target.checked };
+                            setSettings(next);
+                            onSettingsChange?.(next);
+                        }}
                     />
                 </label>
             </section>

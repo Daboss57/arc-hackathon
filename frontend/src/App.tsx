@@ -5,7 +5,7 @@ import { LoginPage } from './components/LoginPage';
 import { SettingsPage } from './components/SettingsPage';
 import { TopNav } from './components/TopNav';
 import { supabase } from './lib/supabaseClient';
-import { DEFAULT_SETTINGS, fetchUserSettings, type UserSettings } from './lib/userSettings';
+import { DEFAULT_SETTINGS, fetchUserSettings, loadLocalSettings, saveLocalSettings, type UserSettings } from './lib/userSettings';
 import './App.css';
 
 function App() {
@@ -34,10 +34,17 @@ function App() {
     const load = async () => {
       const data = await fetchUserSettings(session.user.id);
       if (!active) return;
+      const local = loadLocalSettings(session.user.id);
       if (data) {
-        setSettings({ ...DEFAULT_SETTINGS, ...data, user_id: session.user.id });
+        const merged = { ...DEFAULT_SETTINGS, ...local, ...data, user_id: session.user.id };
+        setSettings(merged);
+        saveLocalSettings(merged);
+      } else if (local) {
+        const merged = { ...DEFAULT_SETTINGS, ...local, user_id: session.user.id };
+        setSettings(merged);
       } else {
-        setSettings({ ...DEFAULT_SETTINGS, user_id: session.user.id });
+        const merged = { ...DEFAULT_SETTINGS, user_id: session.user.id };
+        setSettings(merged);
       }
     };
     load();
@@ -47,12 +54,13 @@ function App() {
   }, [session?.user?.id]);
 
   useEffect(() => {
-    if (!settings?.ui_scale) return;
-    document.documentElement.style.setProperty('--ui-scale', String(settings.ui_scale));
-  }, [settings?.ui_scale]);
+  if (!settings?.ui_scale) return;
+  document.documentElement.style.setProperty('--ui-scale', String(settings.ui_scale));
+}, [settings?.ui_scale]);
 
   const handleSettingsChange = (next: UserSettings) => {
     setSettings(next);
+    saveLocalSettings(next);
   };
 
   if (!session) {
@@ -81,6 +89,7 @@ function App() {
             <SettingsPage
               userId={session.user.id}
               userEmail={session.user.email}
+              settings={settings || undefined}
               onSettingsChange={handleSettingsChange}
             />
           )}

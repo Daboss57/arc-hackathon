@@ -40,7 +40,12 @@ export function LoginPage({ onDemoLogin }: LoginPageProps) {
             password,
         });
         if (signUpError) {
-            setError(signUpError.message);
+            if (signUpError.message.toLowerCase().includes('rate limit')) {
+                setError('Email rate limit exceeded. Please wait a minute or sign in instead.');
+                setMode('signin');
+            } else {
+                setError(signUpError.message);
+            }
             return;
         }
         setStatus('Account created. You can sign in now.');
