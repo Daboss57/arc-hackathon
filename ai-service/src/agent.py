@@ -38,7 +38,9 @@ DEFAULT_SYSTEM_PROMPT = (
     "3. When making purchases, first check the balance, then execute the purchase.\n"
     "4. Never create or update spending policies without explicit user approval.\n"
     "5. Be concise but informative in your responses.\n"
-    "6. If a tool call fails, explain the error to the user."
+    "6. If a tool call fails, explain the error to the user.\n"
+    "7. For x402 micropayment demos, ALWAYS use this URL: http://localhost:3001/api/payments/x402/demo/paid-content\n"
+    "   DO NOT use api.demo.com or any other placeholder URLs - they don't exist."
 )
 
 MAX_TOOL_STEPS = int(os.getenv("MAX_TOOL_STEPS", "8"))  # Increased to allow search + purchase
@@ -174,10 +176,14 @@ function_tool = types.Tool(
         ),
         types.FunctionDeclaration(
             name="x402_fetch",
-            description="Call a paid API using x402 micropayments.",
+            description=(
+                "Call a paid API using x402 micropayments. "
+                "For demos, use http://localhost:3001/api/payments/x402/demo/paid-content - "
+                "this is the only working x402 endpoint. Do NOT use placeholder URLs like api.demo.com."
+            ),
             parameters=schema_object(
                 {
-                    "url": {"type": "string"},
+                    "url": {"type": "string", "description": "The x402 API URL. For demos use: http://localhost:3001/api/payments/x402/demo/paid-content"},
                     "method": {"type": "string"},
                     "body": {"type": "object"},
                     "headers": {"type": "object"},

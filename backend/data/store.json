@@ -25,11 +25,91 @@
           }
         }
       ],
-      "createdAt": "2026-01-23T07:15:58.622Z",
-      "updatedAt": "2026-01-23T07:16:16.440Z"
+      "createdAt": "2026-01-23T06:34:34.248Z",
+      "updatedAt": "2026-01-23T06:34:34.248Z"
+    },
+    {
+      "id": "be575053-0d8d-42c8-a49c-5f07ddabd582",
+      "name": "Advisor Recommended Limits",
+      "description": "AutoWealth advisor recommended spending limits.",
+      "enabled": true,
+      "rules": [
+        {
+          "type": "monthlyBudget",
+          "params": {
+            "budget": 20
+          }
+        },
+        {
+          "type": "dailyLimit",
+          "params": {
+            "limit": 1
+          }
+        },
+        {
+          "type": "maxPerTransaction",
+          "params": {
+            "max": 0.6
+          }
+        }
+      ],
+      "createdAt": "2026-01-23T06:40:49.323Z",
+      "updatedAt": "2026-01-23T06:40:49.323Z"
+    },
+    {
+      "id": "b228b210-cce4-4ab5-8c53-82670bdc0e83",
+      "name": "AI Spending Limit",
+      "description": "Limit AI spending to $20/month and max $5 per transaction.",
+      "enabled": true,
+      "rules": [
+        {
+          "type": "categoryLimit",
+          "params": {
+            "limits": {
+              "'ai-services'": 20
+            }
+          }
+        },
+        {
+          "type": "maxPerTransaction",
+          "params": {
+            "max": 5
+          }
+        }
+      ],
+      "createdAt": "2026-01-23T07:01:50.900Z",
+      "updatedAt": "2026-01-23T07:01:50.900Z"
+    },
+    {
+      "id": "0fb0a0f1-1300-4e08-9b7b-c0b6b26b690b",
+      "enabled": false,
+      "createdAt": "2026-01-23T07:03:12.330Z",
+      "updatedAt": "2026-01-23T07:09:54.838Z"
     }
   ],
   "transactions": [
+    {
+      "from": "0x73b28badd68212ce5e26e6d87c21113501775a65",
+      "to": "0x03972eb60d23a16edf247a521b83153ceb70f9e9",
+      "amount": "0.10",
+      "txHash": "",
+      "currency": "USDC",
+      "status": "confirmed",
+      "category": "supplies",
+      "description": "x402 payment for /api/vendors/grocerygo/purchase/gg-003",
+      "policy": {
+        "approved": true,
+        "appliedPolicies": [
+          "Default Spending Limits",
+          "Advisor Recommended Limits",
+          "AI Spending Limit",
+          "Vendor Whitelist - GroceryGo"
+        ]
+      },
+      "userId": "demo-user",
+      "id": "tx_1769151829202_tw2u47",
+      "createdAt": "2026-01-23T07:03:49.202Z"
+    },
     {
       "from": "0x73b28badd68212ce5e26e6d87c21113501775a65",
       "to": "0x03972eb60d23a16edf247a521b83153ceb70f9e9",
@@ -79,8 +159,6 @@
     "approvedSpendByUser": {
       "demo-user": false
     },
-    "autoBudgetByUser": {
-      "demo-user": false
-    }
+    "autoBudgetByUser": {}
   }
 }
