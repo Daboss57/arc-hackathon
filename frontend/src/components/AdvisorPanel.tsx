@@ -153,7 +153,8 @@ export function AdvisorPanel({ refreshKey, userId, onApplied }: AdvisorPanelProp
         setStatus(null);
         try {
             const target =
-                policies.find((policy) => policy.name.toLowerCase().includes('spending')) ||
+                policies.find((policy) => typeof policy.name === 'string' && policy.name.toLowerCase().includes('spending')) ||
+                policies.find((policy) => typeof policy.name === 'string') ||
                 policies[0];
             if (target) {
                 await updatePolicy(target.id, { rules: nextRecommendation.rules, enabled: true });

@@ -27,7 +27,12 @@ router.get('/:id', (req, res) => {
 
 router.put('/:id', (req, res) => {
     const { name, description, enabled, rules } = req.body;
-    const policy = updatePolicy(req.params.id, { name, description, enabled, rules });
+    const updates: { name?: string; description?: string; enabled?: boolean; rules?: unknown } = {};
+    if (name !== undefined) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    if (enabled !== undefined) updates.enabled = enabled;
+    if (rules !== undefined) updates.rules = rules;
+    const policy = updatePolicy(req.params.id, updates);
     if (!policy) {
         return res.status(404).json({ error: 'Policy not found' });
     }

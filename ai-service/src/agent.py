@@ -9,9 +9,12 @@ import dotenv
 import httpx
 import google.genai as genai
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from google.genai import types
+from starlette.concurrency import iterate_in_threadpool
+from contextlib import asynccontextmanager
 
 dotenv.load_dotenv(dotenv.find_dotenv())
 
@@ -245,7 +248,13 @@ function_tool = types.Tool(
     ]
 )
 
-app = FastAPI(title="AutoWealth AI Service", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    yield
+    await HTTP_CLIENT.aclose()
+
+
+app = FastAPI(title="AutoWealth AI Service", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -617,12 +626,12 @@ def extract_metadata(
     return metadata
 
 
-async def run_with_tools(
+async def run_tool_loop(
     contents: List[types.Content],
     config: types.GenerateContentConfig,
     model: str,
     user_id: Optional[str],
-) -> Tuple[types.GenerateContentResponse, List[Dict[str, Any]]]:
+) -> Tuple[Optional[types.GenerateContentResponse], List[Dict[str, Any]], List[types.Content]]:
     executed_tools: List[Dict[str, Any]] = []
     last_response: Optional[types.GenerateContentResponse] = None
 
@@ -672,6 +681,17 @@ async def run_with_tools(
                 )
             )
             contents.append(types.Content(role="tool", parts=[response_part]))
+
+    return last_response, executed_tools, contents
+
+
+async def run_with_tools(
+    contents: List[types.Content],
+    config: types.GenerateContentConfig,
+    model: str,
+    user_id: Optional[str],
+) -> Tuple[types.GenerateContentResponse, List[Dict[str, Any]]]:
+    last_response, executed_tools, _ = await run_tool_loop(contents, config, model, user_id)
 
     if last_response is None:
         raise HTTPException(status_code=500, detail="Model did not return a response.")
@@ -802,6 +822,9 @@ async def generate_assistant_message(
     return {"content": content, "metadata": metadata or None}
 
 
+## Streaming helper is implemented inline in the SSE endpoint to avoid returning values from an async generator.
+
+
 @app.get("/health")
 async def health_check() -> Dict[str, Any]:
     return {"status": "ok", "timestamp": now_iso()}
@@ -903,9 +926,96 @@ async def create_message(
     }
 
 
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    await HTTP_CLIENT.aclose()
+@app.post("/api/chats/{chat_id}/messages/stream")
+async def create_message_stream(
+    chat_id: str,
+    request: MessageCreateRequest,
+):
+    async with STORE_LOCK:
+        chat = CHATS.get(chat_id)
+        if not chat:
+            raise HTTPException(status_code=404, detail="Chat not found.")
+        message = append_message(chat, request.role, request.content)
+        message_snapshot = list(chat["messages"])
+        system_prompt = chat["system_prompt"]
+        model = request.model or chat["model"] or DEFAULT_MODEL
+
+    if not request.respond or request.role != "user":
+        raise HTTPException(status_code=400, detail="Streaming only supports user messages with respond=true.")
+    if request.use_search:
+        raise HTTPException(status_code=400, detail="Streaming does not support Google Search mode.")
+
+    async def event_stream():
+        yield f"data: {json.dumps({'type': 'ack', 'message': message})}\n\n"
+        full_text = ""
+        metadata: Optional[Dict[str, Any]] = None
+        try:
+            if not AgentClient:
+                raise HTTPException(
+                    status_code=500,
+                    detail="GOOGLE_AI_API_KEY is not set for the AI service.",
+                )
+
+            contents = build_contents(message_snapshot)
+            executed_tools: List[Dict[str, Any]] = []
+
+            if request.use_tools:
+                tool_config = types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    max_output_tokens=1000,
+                    thinking_config=types.ThinkingConfig(
+                        include_thoughts=request.include_thoughts,
+                        thinking_level="low",
+                    ),
+                    tools=[function_tool],
+                )
+                _, executed_tools, contents = await run_tool_loop(
+                    contents, tool_config, model, chat["user_id"]
+                )
+
+            stream_config = types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                max_output_tokens=1000,
+                thinking_config=types.ThinkingConfig(
+                    include_thoughts=False,
+                    thinking_level="low",
+                ),
+                tools=[],
+            )
+
+            stream = AgentClient.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=stream_config,
+            )
+
+            async for chunk in iterate_in_threadpool(stream):
+                if chunk.text:
+                    full_text += chunk.text
+                    yield f"data: {json.dumps({'type': 'delta', 'text': chunk.text})}\n\n"
+
+            metadata = {"executed_tools": executed_tools} if executed_tools else None
+        except HTTPException as exc:
+            yield f"data: {json.dumps({'type': 'error', 'error': exc.detail})}\n\n"
+            return
+        except Exception as exc:  # pragma: no cover - fallback
+            yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
+            return
+
+        if not full_text:
+            yield f"data: {json.dumps({'type': 'error', 'error': 'No response generated'})}\n\n"
+            return
+
+        async with STORE_LOCK:
+            chat = CHATS.get(chat_id)
+            if not chat:
+                yield f"data: {json.dumps({'type': 'error', 'error': 'Chat not found'})}\n\n"
+                return
+            assistant_message = append_message(chat, "assistant", full_text, metadata)
+
+        yield f"data: {json.dumps({'type': 'done', 'message': assistant_message})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 if __name__ == "__main__":

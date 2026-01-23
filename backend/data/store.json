@@ -1,7 +1,7 @@
 {
   "policies": [
     {
-      "id": "54201723-9376-46c7-b0b0-a778b720a86a",
+      "id": "af9544cb-7534-46e7-98ea-517f166795e1",
       "name": "Default Spending Limits",
       "description": "Basic safety limits for autonomous spending",
       "enabled": true,
@@ -25,36 +25,8 @@
           }
         }
       ],
-      "createdAt": "2026-01-23T06:34:34.248Z",
-      "updatedAt": "2026-01-23T06:34:34.248Z"
-    },
-    {
-      "id": "be575053-0d8d-42c8-a49c-5f07ddabd582",
-      "name": "Advisor Recommended Limits",
-      "description": "AutoWealth advisor recommended spending limits.",
-      "enabled": true,
-      "rules": [
-        {
-          "type": "monthlyBudget",
-          "params": {
-            "budget": 20
-          }
-        },
-        {
-          "type": "dailyLimit",
-          "params": {
-            "limit": 1
-          }
-        },
-        {
-          "type": "maxPerTransaction",
-          "params": {
-            "max": 0.6
-          }
-        }
-      ],
-      "createdAt": "2026-01-23T06:40:49.323Z",
-      "updatedAt": "2026-01-23T06:40:49.323Z"
+      "createdAt": "2026-01-23T07:15:58.622Z",
+      "updatedAt": "2026-01-23T07:16:16.440Z"
     }
   ],
   "transactions": [
@@ -101,8 +73,14 @@
   ],
   "safety": {
     "paymentsPaused": false,
-    "safeModeByUser": {},
-    "approvedSpendByUser": {},
-    "autoBudgetByUser": {}
+    "safeModeByUser": {
+      "demo-user": false
+    },
+    "approvedSpendByUser": {
+      "demo-user": false
+    },
+    "autoBudgetByUser": {
+      "demo-user": false
+    }
   }
 }

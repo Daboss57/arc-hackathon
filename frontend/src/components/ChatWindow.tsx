@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createChat, sendMessage, type Message } from '../api/aiService';
+import { createChat, sendMessageStream, type Message } from '../api/aiService';
 import { BalanceDisplay } from './BalanceDisplay';
 import { MessageInput } from './MessageInput';
 import { MessageList } from './MessageList';
@@ -53,30 +53,54 @@ export function ChatWindow() {
             content,
             created_at: new Date().toISOString(),
         };
-        setMessages((prev) => [...prev, tempUserMessage]);
+        const tempAssistantMessage: Message = {
+            id: `stream-${Date.now()}`,
+            role: 'assistant',
+            content: '',
+            created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, tempUserMessage, tempAssistantMessage]);
         setIsLoading(true);
         setError(null);
 
         try {
-            const response = await sendMessage(chatId, content);
-
-            // Replace temp message with real one and add assistant response
-            setMessages((prev) => {
-                const filtered = prev.filter((m) => m.id !== tempUserMessage.id);
-                const newMessages = [response.message];
-                if (response.assistant_message) {
-                    newMessages.push(response.assistant_message);
+            const stream = await sendMessageStream(chatId, content);
+            for await (const event of stream) {
+                if (event.type === 'ack') {
+                    setMessages((prev) =>
+                        prev.map((msg) => (msg.id === tempUserMessage.id ? event.message : msg))
+                    );
                 }
-                return [...filtered, ...newMessages];
-            });
-
-            // Refresh balance after any transaction-related message
-            setRefreshKey((t) => t + 1);
+                if (event.type === 'delta') {
+                    setMessages((prev) =>
+                        prev.map((msg) =>
+                            msg.id === tempAssistantMessage.id
+                                ? { ...msg, content: msg.content + event.text }
+                                : msg
+                        )
+                    );
+                }
+                if (event.type === 'done') {
+                    setMessages((prev) =>
+                        prev.map((msg) =>
+                            msg.id === tempAssistantMessage.id ? event.message : msg
+                        )
+                    );
+                    setRefreshKey((t) => t + 1);
+                    break;
+                }
+                if (event.type === 'error') {
+                    setError(event.error);
+                    setMessages((prev) => prev.filter((msg) => msg.id !== tempAssistantMessage.id));
+                    break;
+                }
+            }
         } catch (err) {
             setError('Failed to send message. Check if services are running.');
             console.error(err);
-            // Remove temporary message on error
-            setMessages((prev) => prev.filter((m) => m.id !== tempUserMessage.id));
+            setMessages((prev) =>
+                prev.filter((m) => m.id !== tempUserMessage.id && m.id !== tempAssistantMessage.id)
+            );
         } finally {
             setIsLoading(false);
         }

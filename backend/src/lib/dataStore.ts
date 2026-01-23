@@ -60,7 +60,7 @@ export async function initDataStore(): Promise<void> {
     if (loaded) return;
     loaded = true;
 
-    if (config.NODE_ENV === 'test') {
+    if (config.NODE_ENV === 'test' || process.env.NODE_ENV === 'test') {
         state = {
             policies: [],
             transactions: [],
@@ -98,7 +98,7 @@ export async function initDataStore(): Promise<void> {
 }
 
 async function persistState(): Promise<void> {
-    if (config.NODE_ENV === 'test') return;
+    if (config.NODE_ENV === 'test' || process.env.NODE_ENV === 'test') return;
     try {
         await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
         await fs.writeFile(STORE_PATH, JSON.stringify(state, null, 2), 'utf-8');

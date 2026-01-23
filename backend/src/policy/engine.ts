@@ -11,8 +11,13 @@ export function loadPoliciesFromStore(): void {
     const stored = getPolicies();
     policies.clear();
     for (const policy of stored) {
+        if (!policy || typeof policy.name !== 'string' || !Array.isArray(policy.rules)) {
+            logger.warn('Skipping invalid policy from store', { policyId: policy?.id });
+            continue;
+        }
         policies.set(policy.id, policy);
     }
+    persistPolicies();
 }
 
 function persistPolicies(): void {
@@ -48,7 +53,13 @@ export function updatePolicy(id: string, updates: Partial<Pick<Policy, 'name' | 
     const policy = policies.get(id);
     if (!policy) return null;
 
-    Object.assign(policy, updates, { updatedAt: new Date() });
+    const sanitized: Partial<Pick<Policy, 'name' | 'description' | 'enabled' | 'rules'>> = {};
+    if (updates.name !== undefined) sanitized.name = updates.name;
+    if (updates.description !== undefined) sanitized.description = updates.description;
+    if (updates.enabled !== undefined) sanitized.enabled = updates.enabled;
+    if (updates.rules !== undefined) sanitized.rules = updates.rules;
+
+    Object.assign(policy, sanitized, { updatedAt: new Date() });
     persistPolicies();
     return policy;
 }

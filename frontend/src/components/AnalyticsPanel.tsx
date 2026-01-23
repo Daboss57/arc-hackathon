@@ -41,7 +41,8 @@ export function AnalyticsPanel({ refreshKey, userId }: AnalyticsPanelProps) {
     const policyLimits = useMemo(() => {
         const limits: { daily?: number; monthly?: number } = {};
         for (const policy of policies) {
-            for (const rule of policy.rules) {
+            const rules = Array.isArray(policy.rules) ? policy.rules : [];
+            for (const rule of rules) {
                 if (rule.type === 'dailyLimit' && limits.daily === undefined) {
                     limits.daily = Number((rule.params as { limit?: number }).limit ?? 0);
                 }

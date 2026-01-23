@@ -88,15 +88,19 @@ export function PolicyCockpit({ refreshKey, onPolicyChange }: PolicyCockpitProps
             {error && <div className="panel-error">{error}</div>}
 
             <div className="policy-list">
-                {policies.map((policy) => (
+                {policies.map((policy) => {
+                    const rules = Array.isArray(policy.rules) ? policy.rules : [];
+                    return (
                     <div key={policy.id} className={`policy-card ${policy.enabled ? 'enabled' : 'disabled'}`}>
                         <div className="policy-header">
                             <div>
-                                <h4>{policy.name}</h4>
+                                <h4>{policy.name || 'Unnamed Policy'}</h4>
                                 {policy.description && <p>{policy.description}</p>}
-                                <span className="policy-updated">
-                                    Updated {new Date(policy.updatedAt).toLocaleDateString()}
-                                </span>
+                                {policy.updatedAt && (
+                                    <span className="policy-updated">
+                                        Updated {new Date(policy.updatedAt).toLocaleDateString()}
+                                    </span>
+                                )}
                             </div>
                             <button
                                 className={`toggle-btn ${policy.enabled ? 'on' : 'off'}`}
@@ -106,14 +110,15 @@ export function PolicyCockpit({ refreshKey, onPolicyChange }: PolicyCockpitProps
                             </button>
                         </div>
                         <div className="policy-rules">
-                            {policy.rules.map((rule, index) => (
+                            {rules.map((rule, index) => (
                                 <span key={`${policy.id}-${index}`} className="rule-pill">
                                     {renderRule(rule)}
                                 </span>
                             ))}
                         </div>
                     </div>
-                ))}
+                    );
+                })}
 
                 {!loading && policies.length === 0 && (
                     <div className="panel-muted">No policies yet. Generate one in Advisor Review.</div>

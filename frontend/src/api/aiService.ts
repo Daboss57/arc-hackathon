@@ -162,6 +162,55 @@ export async function getBalance(): Promise<TreasuryBalance> {
     return response.json();
 }
 
+export type StreamEvent =
+    | { type: 'ack'; message: Message }
+    | { type: 'delta'; text: string }
+    | { type: 'done'; message: Message }
+    | { type: 'error'; error: string };
+
+export async function sendMessageStream(
+    chatId: string,
+    content: string
+): Promise<AsyncGenerator<StreamEvent>> {
+    const response = await fetch(`${AI_SERVICE_URL}/api/chats/${chatId}/messages/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, role: 'user', respond: true, use_tools: true }),
+    });
+
+    if (!response.ok || !response.body) {
+        throw new Error('Failed to stream message');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    async function* stream() {
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const chunks = buffer.split('\n\n');
+            buffer = chunks.pop() || '';
+
+            for (const chunk of chunks) {
+                const line = chunk.split('\n').find((l) => l.startsWith('data:'));
+                if (!line) continue;
+                const data = line.replace(/^data:\s?/, '');
+                try {
+                    const event = JSON.parse(data) as StreamEvent;
+                    yield event;
+                } catch {
+                    // Ignore malformed events
+                }
+            }
+        }
+    }
+
+    return stream();
+}
+
 export async function getMessages(chatId: string): Promise<Message[]> {
     const response = await fetch(`${AI_SERVICE_URL}/api/chats/${chatId}/messages`);
     if (!response.ok) throw new Error('Failed to get messages');
