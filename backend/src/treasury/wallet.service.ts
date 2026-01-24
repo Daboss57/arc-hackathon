@@ -34,7 +34,7 @@ const store: WalletStore = {
         currency: 'USDC',
         reserved: '0.00',
         available: '0.00',
-        lastUpdated: new Date(),
+        lastUpdated: new Date(0),
     },
 };
 
@@ -109,7 +109,7 @@ export async function getWallet(): Promise<WalletInfo | null> {
 }
 
 async function refreshBalance(): Promise<void> {
-    if (!store.wallet || !config.CIRCLE_WALLET_ID) return;
+    if (!config.CIRCLE_WALLET_ID) return;
 
     try {
         const client = getCircleClient();
@@ -119,15 +119,18 @@ async function refreshBalance(): Promise<void> {
 
         const balances = response.data?.tokenBalances || [];
         const usdcBalance = balances.find(b =>
-            b.token?.symbol === 'USDC' || b.token?.name?.includes('USDC')
+            b.token?.symbol === 'USDC' ||
+            b.token?.symbol?.includes('USDC') ||
+            b.token?.name?.includes('USDC')
         );
 
         const amount = usdcBalance?.amount || '0';
+        const available = Math.max(0, parseFloat(amount) - parseFloat(store.balance.reserved)).toFixed(2);
         store.balance = {
             amount,
             currency: 'USDC',
             reserved: store.balance.reserved,
-            available: (parseFloat(amount) - parseFloat(store.balance.reserved)).toFixed(2),
+            available,
             lastUpdated: new Date(),
         };
 
@@ -198,7 +201,11 @@ async function getUsdcTokenId(): Promise<string | null> {
         const client = getCircleClient();
         const response = await client.getWalletTokenBalance({ id: config.CIRCLE_WALLET_ID });
         const balances = response.data?.tokenBalances || [];
-        const usdc = balances.find(b => b.token?.symbol === 'USDC' || b.token?.name?.includes('USDC'));
+        const usdc = balances.find(b =>
+            b.token?.symbol === 'USDC' ||
+            b.token?.symbol?.includes('USDC') ||
+            b.token?.name?.includes('USDC')
+        );
         if (usdc?.token?.id) {
             cachedTokenId = usdc.token.id;
             return cachedTokenId;
