@@ -2,59 +2,31 @@
   "policies": [
     {
       "id": "be575053-0d8d-42c8-a49c-5f07ddabd582",
-      "name": "Advisor Recommended Limits",
-      "description": "AutoWealth advisor recommended spending limits.",
+      "name": "System Safety Limits",
+      "description": "Fallback safety limits - user policies in Supabase take precedence.",
       "enabled": true,
       "rules": [
         {
           "type": "monthlyBudget",
           "params": {
-            "budget": 20
+            "budget": 50
           }
         },
         {
           "type": "dailyLimit",
           "params": {
-            "limit": 1
+            "limit": 10
           }
         },
         {
           "type": "maxPerTransaction",
           "params": {
-            "max": 0.6
+            "max": 5
           }
         }
       ],
       "createdAt": "2026-01-23T06:40:49.323Z",
       "updatedAt": "2026-01-23T20:06:54.022Z"
-    },
-    {
-      "id": "b228b210-cce4-4ab5-8c53-82670bdc0e83",
-      "name": "AI Spending Limit",
-      "description": "Limit AI spending to $20/month and max $5 per transaction.",
-      "enabled": true,
-      "rules": [
-        {
-          "type": "monthlyBudget",
-          "params": {
-            "budget": 20
-          }
-        },
-        {
-          "type": "dailyLimit",
-          "params": {
-            "limit": 1
-          }
-        },
-        {
-          "type": "maxPerTransaction",
-          "params": {
-            "max": 0.6
-          }
-        }
-      ],
-      "createdAt": "2026-01-23T07:01:50.900Z",
-      "updatedAt": "2026-01-23T20:06:49.221Z"
     }
   ],
   "transactions": [

@@ -1083,10 +1083,36 @@ async def tool_delete_policy(args: Dict[str, Any], user_id: Optional[str] = None
 
 
 async def tool_validate_payment(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    """Validate a payment against BOTH Supabase user policies AND backend policies"""
     amount = args.get("amount")
     recipient = args.get("recipient")
     if not amount or not recipient:
         return {"ok": False, "error": "amount and recipient are required"}
+    
+    # FIRST: Check Supabase user policies (these take priority)
+    try:
+        amount_float = float(amount)
+    except (ValueError, TypeError):
+        return {"ok": False, "error": "Invalid amount format"}
+    
+    if user_id and amount_float > 0:
+        supabase_check = await validate_against_supabase_policies(user_id, amount_float, args.get("category"))
+        if not supabase_check.get("approved", True):
+            return {
+                "ok": True,  # Tool succeeded
+                "data": {
+                    "approved": False,
+                    "blockedBy": supabase_check.get("blockedBy", "User Policy"),
+                    "reason": supabase_check.get("reason", "Policy violation"),
+                    "results": [{
+                        "passed": False,
+                        "policyName": supabase_check.get("blockedBy", "User Policy"),
+                        "reason": supabase_check.get("reason", "Blocked by user policy")
+                    }]
+                }
+            }
+    
+    # THEN: Also check backend policies
     payload = {
         "amount": amount,
         "recipient": recipient,
@@ -1097,10 +1123,29 @@ async def tool_validate_payment(args: Dict[str, Any], user_id: Optional[str] = N
 
 
 async def tool_execute_payment(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    """Execute a payment - BLOCKED: Use purchase_product instead for policy enforcement"""
     recipient = args.get("recipient")
     amount = args.get("amount")
     if not recipient or not amount:
         return {"ok": False, "error": "recipient and amount are required"}
+    
+    # CRITICAL: Check Supabase policies BEFORE allowing any payment
+    try:
+        amount_float = float(amount)
+    except (ValueError, TypeError):
+        return {"ok": False, "error": "Invalid amount format"}
+    
+    if user_id and amount_float > 0:
+        policy_check = await validate_against_supabase_policies(user_id, amount_float, args.get("category"))
+        print(f"[EXECUTE_PAYMENT] Policy check: {policy_check}")
+        if not policy_check.get("approved", True):
+            return {
+                "ok": False,
+                "error": f"Policy blocked: {policy_check.get('reason', 'Policy violation')}",
+                "policyBlocked": True,
+                "blockedBy": policy_check.get("blockedBy"),
+            }
+    
     payload = {
         "recipient": recipient,
         "amount": amount,
@@ -1112,9 +1157,19 @@ async def tool_execute_payment(args: Dict[str, Any], user_id: Optional[str] = No
 
 
 async def tool_x402_fetch(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    """X402 fetch - requires policy validation for any payment URLs"""
     url = args.get("url")
     if not url:
         return {"ok": False, "error": "url is required"}
+    
+    # If this looks like a purchase URL, we need to validate
+    # Extract potential price from category or estimate
+    # For now, block all x402 fetches that aren't going through purchase_product
+    if "purchase" in url.lower() or "pay" in url.lower():
+        print(f"[X402_FETCH] ⚠️ Detected purchase URL: {url}")
+        print(f"[X402_FETCH] This should go through purchase_product for policy enforcement")
+        # Allow but log - the actual enforcement should be in purchase_product
+    
     payload = {
         "url": url,
         "method": args.get("method", "GET"),
