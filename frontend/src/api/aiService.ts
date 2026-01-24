@@ -176,7 +176,7 @@ export async function sendMessage(
     const response = await fetch(`${AI_SERVICE_URL}/api/chats/${chatId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, role: 'user', respond: true, use_tools: true }),
+        body: JSON.stringify({ content, role: 'user', respond: true, use_tools: true, include_thoughts: true }),
     });
     if (!response.ok) throw new Error('Failed to send message');
     return response.json();
@@ -205,7 +205,7 @@ export async function sendMessageStream(
     const response = await fetch(`${AI_SERVICE_URL}/api/chats/${chatId}/messages/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, role: 'user', respond: true, use_tools: true }),
+        body: JSON.stringify({ content, role: 'user', respond: true, use_tools: true, include_thoughts: true }),
     });
 
     if (!response.ok || !response.body) {

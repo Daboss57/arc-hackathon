@@ -63,9 +63,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "4. Never create or update spending policies without explicit user approval.\n"
     "5. Be concise but informative in your responses.\n"
     "6. If a tool call fails, explain the error to the user.\n"
-    "7. Do not reveal internal reasoning, step-by-step thoughts, or tool planning. "
-    "Only provide the final answer and any tool results that are relevant to the user.\n"
-    "8. For x402 micropayment demos, ALWAYS use this URL: http://localhost:3001/api/payments/x402/demo/paid-content\n"
+    "7. For x402 micropayment demos, ALWAYS use this URL: http://localhost:3001/api/payments/x402/demo/paid-content\n"
     "   DO NOT use api.demo.com or any other placeholder URLs - they don't exist."
 )
 
@@ -913,6 +911,16 @@ def build_tool_fallback(executed_tools: List[Dict[str, Any]]) -> str:
     return f"Completed: {', '.join(tool_names)}. Expand '🔧 tools executed' for details."
 
 
+def sanitize_user_visible_text(text: str) -> Tuple[str, List[str]]:
+    cleaned = text.strip()
+    if not cleaned:
+        return text, []
+    lower = cleaned.lower()
+    if lower.startswith("plan:"):
+        return "", [cleaned]
+    return text, []
+
+
 async def run_tool_loop(
     contents: List[types.Content],
     config: types.GenerateContentConfig,
@@ -1041,11 +1049,16 @@ async def generate_assistant_message(
         metadata["executed_tools"] = executed_tools
 
     content = extract_text(response)
-    
+    content, extra_thoughts = sanitize_user_visible_text(content)
+    if extra_thoughts:
+        metadata["thoughts"] = (metadata.get("thoughts") or []) + extra_thoughts
+
     # If no text response but tools were executed, generate a summary
     if not content and executed_tools:
         content = build_tool_fallback(executed_tools)
-    
+    if not content:
+        content = "I can proceed if you confirm. What would you like me to do next?"
+
     return {"content": content, "metadata": metadata or None}
 
 
@@ -1399,6 +1412,15 @@ async def create_message_stream(
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
             return
 
+        full_text, extra_thoughts = sanitize_user_visible_text(full_text)
+        if extra_thoughts:
+            for thought in extra_thoughts:
+                yield f"data: {json.dumps({'type': 'thought', 'text': thought})}\n\n"
+            if metadata:
+                metadata["thoughts"] = (metadata.get("thoughts") or []) + extra_thoughts
+            else:
+                metadata = {"thoughts": extra_thoughts}
+
         if not full_text:
             fallback = build_tool_fallback(executed_tools)
             if not fallback:
@@ -1414,8 +1436,9 @@ async def create_message_stream(
                 yield f"data: {json.dumps({'type': 'delta', 'text': fallback})}\n\n"
                 full_text = fallback
             else:
-                yield f"data: {json.dumps({'type': 'error', 'error': 'No response generated'})}\n\n"
-                return
+                fallback = "I can proceed if you confirm. What would you like me to do next?"
+                yield f"data: {json.dumps({'type': 'delta', 'text': fallback})}\n\n"
+                full_text = fallback
 
         assistant_message = build_message("assistant", full_text, metadata)
         await db_insert_message(chat_id, user_id, assistant_message)
