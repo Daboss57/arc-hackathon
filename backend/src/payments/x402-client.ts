@@ -7,7 +7,7 @@
 import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
 import { validatePayment } from '../policy/engine.js';
-import { getSpendingAnalytics, getWallet, transferUsdc, recordTransaction } from '../treasury/wallet.service.js';
+import { getSpendingAnalytics, getWallet, initializeWallet, transferUsdc, recordTransaction } from '../treasury/wallet.service.js';
 import { parseAmount } from '../lib/amount.js';
 
 export interface X402FetchResult {
@@ -36,7 +36,14 @@ export async function x402Fetch(
     userId?: string,
     metadata?: Record<string, unknown>
 ): Promise<X402FetchResult> {
-    const wallet = await getWallet();
+    let wallet = await getWallet();
+    if (!wallet) {
+        try {
+            wallet = await initializeWallet();
+        } catch (err) {
+            logger.error('Failed to initialize wallet for x402', { error: String(err) });
+        }
+    }
     if (!wallet) {
         return { success: false, error: 'Wallet not initialized' };
     }
