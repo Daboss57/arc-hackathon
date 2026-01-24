@@ -92,4 +92,48 @@ router.post('/safety', (req, res) => {
     res.json(getSafetySnapshot(userId));
 });
 
+router.get('/debug', async (_req, res) => {
+    try {
+        const { getWalletTokenBalance } = await import('../../treasury/wallet.service.js');
+        // We need to access the internal circleClient or minimal logic to test
+        const { config } = await import('../../lib/config.js');
+        const { initiateDeveloperControlledWalletsClient } = await import('@circle-fin/developer-controlled-wallets');
+
+        if (!config.CIRCLE_WALLET_ID || !config.CIRCLE_API_KEY || !config.CIRCLE_ENTITY_SECRET) {
+            res.json({
+                error: 'Missing Config',
+                config: {
+                    hasWalletId: !!config.CIRCLE_WALLET_ID,
+                    hasApiKey: !!config.CIRCLE_API_KEY,
+                    hasEntitySecret: !!config.CIRCLE_ENTITY_SECRET
+                }
+            });
+            return;
+        }
+
+        const client = initiateDeveloperControlledWalletsClient({
+            apiKey: config.CIRCLE_API_KEY,
+            entitySecret: config.CIRCLE_ENTITY_SECRET,
+        });
+
+        const response = await client.getWalletTokenBalance({
+            id: config.CIRCLE_WALLET_ID,
+        });
+
+        res.json({
+            status: 'success',
+            walletId: config.CIRCLE_WALLET_ID,
+            data: response.data,
+            raw: response
+        });
+
+    } catch (err) {
+        res.status(500).json({
+            error: 'Debug Request Failed',
+            details: String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        });
+    }
+});
+
 export default router;
