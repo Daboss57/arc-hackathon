@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { ChatWindow } from './components/ChatWindow';
+import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { SettingsPage } from './components/SettingsPage';
 import { TopNav } from './components/TopNav';
@@ -10,6 +11,7 @@ import './App.css';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
+  const [showAuth, setShowAuth] = useState(false);
   const [activeView, setActiveView] = useState<'dashboard' | 'settings'>('dashboard');
   const [settings, setSettings] = useState<UserSettings | null>(null);
 
@@ -63,12 +65,16 @@ function App() {
     saveLocalSettings(next);
   };
 
+  // Not logged in - show landing or auth
   if (!session) {
-    return (
-      <div className="app">
-        <LoginPage />
-      </div>
-    );
+    if (showAuth) {
+      return (
+        <div className="app">
+          <LoginPage onBackToLanding={() => setShowAuth(false)} />
+        </div>
+      );
+    }
+    return <LandingPage onGetStarted={() => setShowAuth(true)} />;
   }
 
   const userLabel = settings?.display_name || session.user.email || 'User';

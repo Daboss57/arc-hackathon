@@ -3,9 +3,10 @@ import { supabase } from '../lib/supabaseClient';
 
 interface LoginPageProps {
     onDemoLogin?: () => void;
+    onBackToLanding?: () => void;
 }
 
-export function LoginPage({ onDemoLogin }: LoginPageProps) {
+export function LoginPage({ onDemoLogin, onBackToLanding }: LoginPageProps) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [mode, setMode] = useState<'signin' | 'signup'>('signin');
@@ -99,9 +100,14 @@ export function LoginPage({ onDemoLogin }: LoginPageProps) {
     return (
         <div className="auth-page">
             <div className="auth-card">
+                {onBackToLanding && (
+                    <button className="auth-back-btn" onClick={onBackToLanding}>
+                        ← Back
+                    </button>
+                )}
                 <div className="auth-header">
-                    <h1>AutoWealth Agent</h1>
-                    <p>Trustless spend management for autonomous commerce.</p>
+                    <h1>{mode === 'signin' ? 'Welcome back' : 'Create account'}</h1>
+                    <p>{mode === 'signin' ? 'Sign in to your ARC account' : 'Get started with ARC'}</p>
                 </div>
 
                 <form onSubmit={handleAuth} className="auth-form">
