@@ -303,10 +303,10 @@ export async function listVendorProducts(vendorId: string): Promise<{ vendorName
 }
 
 export async function listPolicies(): Promise<Policy[]> {
-    const response = await fetch(`${BACKEND_URL}/api/policy`);
+    const response = await fetch(`${BACKEND_URL}/api/policy`, { cache: 'no-store' });
     if (!response.ok) throw new Error('Failed to load policies');
     const data = await response.json();
-    return data.policies as Policy[];
+    return Array.isArray(data?.policies) ? (data.policies as Policy[]) : [];
 }
 
 export async function createPolicy(payload: {
