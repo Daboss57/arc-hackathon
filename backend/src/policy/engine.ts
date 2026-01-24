@@ -25,9 +25,13 @@ function persistPolicies(): void {
     setPolicies(Array.from(policies.values()));
 }
 
-export function createPolicy(data: { name: string; description?: string; rules: Rule[] }): Policy {
+export function createPolicy(
+    data: { name: string; description?: string; rules: Rule[] },
+    userId?: string
+): Policy {
     const policy: Policy = {
         id: uuid(),
+        userId,
         name: data.name,
         description: data.description,
         enabled: true,
@@ -42,17 +46,35 @@ export function createPolicy(data: { name: string; description?: string; rules: 
     return policy;
 }
 
-export function getPolicy(id: string): Policy | undefined {
-    return policies.get(id);
+export function getPolicy(id: string, userId?: string): Policy | undefined {
+    const policy = policies.get(id);
+    if (!policy) return undefined;
+    if (userId && policy.userId && policy.userId !== userId) return undefined;
+    return policy;
 }
 
-export function listPolicies(): Policy[] {
-    return Array.from(policies.values());
+export function listPolicies(userId?: string): Policy[] {
+    const allPolicies = Array.from(policies.values());
+    if (!userId) return allPolicies;
+    const scoped = allPolicies.filter(policy => policy.userId === userId);
+    if (scoped.length === 0) {
+        seedDefaultPolicies(userId);
+        return Array.from(policies.values()).filter(policy => policy.userId === userId);
+    }
+    return scoped;
 }
 
-export function updatePolicy(id: string, updates: Partial<Pick<Policy, 'name' | 'description' | 'enabled' | 'rules'>>): Policy | null {
+export function updatePolicy(
+    id: string,
+    updates: Partial<Pick<Policy, 'name' | 'description' | 'enabled' | 'rules'>>,
+    userId?: string
+): Policy | null {
     const policy = policies.get(id);
     if (!policy) return null;
+    if (userId && policy.userId && policy.userId !== userId) return null;
+    if (userId && !policy.userId) {
+        policy.userId = userId;
+    }
 
     const sanitized: Partial<Pick<Policy, 'name' | 'description' | 'enabled' | 'rules'>> = {};
     if (updates.name !== undefined) sanitized.name = updates.name;
@@ -65,7 +87,10 @@ export function updatePolicy(id: string, updates: Partial<Pick<Policy, 'name' | 
     return policy;
 }
 
-export function deletePolicy(id: string): boolean {
+export function deletePolicy(id: string, userId?: string): boolean {
+    const existing = policies.get(id);
+    if (!existing) return false;
+    if (userId && existing.userId && existing.userId !== userId) return false;
     const deleted = policies.delete(id);
     if (deleted) persistPolicies();
     return deleted;
@@ -128,7 +153,8 @@ export async function validatePayment(ctx: PaymentContext): Promise<ValidationSu
     let approved = true;
     let blockedBy: string | undefined;
 
-    for (const policy of policies.values()) {
+    const applicablePolicies = listPolicies(userId);
+    for (const policy of applicablePolicies) {
         if (!policy.enabled) continue;
 
         let policyPassed = true;
@@ -170,8 +196,10 @@ export async function validatePayment(ctx: PaymentContext): Promise<ValidationSu
     return { approved, results, blockedBy };
 }
 
-export function seedDefaultPolicies(): void {
-    if (policies.size > 0) return;
+export function seedDefaultPolicies(userId?: string): void {
+    if (!userId) return;
+    const hasPolicies = Array.from(policies.values()).some(policy => policy.userId === userId);
+    if (hasPolicies) return;
 
     createPolicy({
         name: 'Default Spending Limits',
@@ -181,7 +209,7 @@ export function seedDefaultPolicies(): void {
             { type: 'dailyLimit', params: { limit: 50 } },
             { type: 'monthlyBudget', params: { budget: 200 } },
         ],
-    });
+    }, userId);
 
     logger.info('Seeded default policies');
 }

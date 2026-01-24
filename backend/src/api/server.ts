@@ -13,6 +13,7 @@ import treasuryRoutes from './routes/treasury.js';
 import policyRoutes from './routes/policy.js';
 import paymentRoutes from './routes/payments.js';
 import vendorRoutes from './routes/vendors.js';
+import accountRoutes from './routes/account.js';
 
 const app = express();
 
@@ -51,6 +52,7 @@ app.use('/api/treasury', treasuryRoutes);
 app.use('/api/policy', policyRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/vendors', vendorRoutes);
+app.use('/api/account', accountRoutes);
 
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });

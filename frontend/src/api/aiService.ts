@@ -302,8 +302,11 @@ export async function listVendorProducts(vendorId: string): Promise<{ vendorName
     return response.json();
 }
 
-export async function listPolicies(): Promise<Policy[]> {
-    const response = await fetch(`${BACKEND_URL}/api/policy`, { cache: 'no-store' });
+export async function listPolicies(userId?: string): Promise<Policy[]> {
+    const response = await fetch(`${BACKEND_URL}/api/policy`, {
+        cache: 'no-store',
+        headers: withUserId(userId),
+    });
     if (!response.ok) throw new Error('Failed to load policies');
     const data = await response.json();
     return Array.isArray(data?.policies) ? (data.policies as Policy[]) : [];
@@ -313,20 +316,24 @@ export async function createPolicy(payload: {
     name: string;
     description?: string;
     rules: Rule[];
-}): Promise<Policy> {
+}, userId?: string): Promise<Policy> {
     const response = await fetch(`${BACKEND_URL}/api/policy`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...withUserId(userId) },
         body: JSON.stringify(payload),
     });
     if (!response.ok) throw new Error('Failed to create policy');
     return response.json();
 }
 
-export async function updatePolicy(policyId: string, updates: Partial<Pick<Policy, 'name' | 'description' | 'enabled' | 'rules'>>): Promise<Policy> {
+export async function updatePolicy(
+    policyId: string,
+    updates: Partial<Pick<Policy, 'name' | 'description' | 'enabled' | 'rules'>>,
+    userId?: string
+): Promise<Policy> {
     const response = await fetch(`${BACKEND_URL}/api/policy/${policyId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...withUserId(userId) },
         body: JSON.stringify(updates),
     });
     if (!response.ok) throw new Error('Failed to update policy');
@@ -456,4 +463,16 @@ export async function updateSafetyStatus(
     });
     if (!response.ok) throw new Error('Failed to update safety status');
     return response.json();
+}
+
+export async function deleteAccount(userId: string): Promise<void> {
+    const response = await fetch(`${AI_SERVICE_URL}/api/account`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId }),
+    });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error?.error || 'Failed to delete account');
+    }
 }

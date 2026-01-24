@@ -15,6 +15,8 @@ const envSchema = z.object({
     DATA_STORE_PATH: z.string().optional(),
     SERVE_FRONTEND: z.coerce.boolean().optional(),
     FRONTEND_DIST: z.string().optional(),
+    SUPABASE_URL: z.string().url().optional(),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
 });
 
 function loadConfig() {

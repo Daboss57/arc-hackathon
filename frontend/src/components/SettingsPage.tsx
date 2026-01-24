@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { updateSafetyStatus } from '../api/aiService';
+import { deleteAccount, updateSafetyStatus } from '../api/aiService';
+import { supabase } from '../lib/supabaseClient';
 import { DEFAULT_SETTINGS, saveLocalSettings, upsertUserSettings, type UserSettings } from '../lib/userSettings';
 
 interface SettingsPageProps {
@@ -15,6 +16,7 @@ export function SettingsPage({ userId, userEmail, settings: initialSettings, onS
     );
     const [status, setStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         if (initialSettings) {
@@ -44,6 +46,27 @@ export function SettingsPage({ userId, userEmail, settings: initialSettings, onS
         );
         setStatus('Settings saved.');
         onSettingsChange?.(saved);
+    };
+
+    const handleDeleteAccount = async () => {
+        const confirmed = window.confirm(
+            'Delete your account and all data? This cannot be undone.'
+        );
+        if (!confirmed) return;
+        setDeleting(true);
+        setStatus(null);
+        setError(null);
+        try {
+            await deleteAccount(userId);
+            localStorage.removeItem(`autowealth-settings:${userId}`);
+            localStorage.removeItem(`autowealth-receipts:${userId}`);
+            localStorage.removeItem(`autowealth-active-chat:${userId}`);
+            await supabase.auth.signOut();
+        } catch (err) {
+            setError('Failed to delete account. Please try again.');
+        } finally {
+            setDeleting(false);
+        }
     };
 
     return (
@@ -176,6 +199,18 @@ export function SettingsPage({ userId, userEmail, settings: initialSettings, onS
 
             {error && <div className="panel-error">{error}</div>}
             {status && <div className="panel-success">{status}</div>}
+
+            <section className="panel settings-panel danger">
+                <div className="panel-header">
+                    <div>
+                        <h3 className="panel-title">Danger Zone</h3>
+                        <p className="panel-subtitle">Delete your account and all stored data.</p>
+                    </div>
+                </div>
+                <button className="btn btn-danger" onClick={handleDeleteAccount} disabled={deleting}>
+                    {deleting ? 'Deleting...' : 'Delete account'}
+                </button>
+            </section>
 
             <button className="btn btn-primary" onClick={handleSave}>
                 Save settings

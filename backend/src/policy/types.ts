@@ -12,6 +12,7 @@ export interface Rule {
 
 export interface Policy {
     id: string;
+    userId?: string;
     name: string;
     description?: string;
     enabled: boolean;

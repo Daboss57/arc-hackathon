@@ -114,7 +114,7 @@ export function AdvisorPanel({ refreshKey, userId, onApplied, defaultGoal }: Adv
             setLoading(true);
             try {
                 const [policyData, analyticsData, safety] = await Promise.all([
-                    listPolicies(),
+                    listPolicies(userId),
                     getSpendingAnalytics(userId),
                     getSafetyStatus(userId),
                 ]);
@@ -164,13 +164,13 @@ export function AdvisorPanel({ refreshKey, userId, onApplied, defaultGoal }: Adv
                 policies.find((policy) => typeof policy.name === 'string') ||
                 policies[0];
             if (target) {
-                await updatePolicy(target.id, { rules: nextRecommendation.rules, enabled: true });
+                await updatePolicy(target.id, { rules: nextRecommendation.rules, enabled: true }, userId);
             } else {
                 await createPolicy({
                     name: 'Advisor Recommended Limits',
                     description: 'AutoWealth advisor recommended spending limits.',
                     rules: nextRecommendation.rules,
-                });
+                }, userId);
             }
             setStatus('Policy updated. Guardrails will apply to new payments.');
             setRecommendation(null);
@@ -180,7 +180,7 @@ export function AdvisorPanel({ refreshKey, userId, onApplied, defaultGoal }: Adv
         } finally {
             setApplying(false);
         }
-    }, [policies, onApplied]);
+    }, [policies, onApplied, userId]);
 
     const handleApply = async () => {
         if (!recommendation) return;

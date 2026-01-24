@@ -21,7 +21,7 @@ export function AnalyticsPanel({ refreshKey, userId }: AnalyticsPanelProps) {
             try {
                 const [data, policyData] = await Promise.all([
                     getSpendingAnalytics(userId),
-                    listPolicies(),
+                    listPolicies(userId),
                 ]);
                 if (!active) return;
                 setAnalytics(data);

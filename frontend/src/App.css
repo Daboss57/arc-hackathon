@@ -311,6 +311,10 @@ select {
   accent-color: var(--accent-primary);
 }
 
+.settings-panel.danger {
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
 .settings-meta {
   font-size: 0.75rem;
   color: var(--text-muted);

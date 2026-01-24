@@ -32,6 +32,20 @@ See [implementation_plan.md](../implementation_plan.md) for full architecture de
 |----------|--------|-------------|
 | `/api/payments/execute` | POST | Execute a payment |
 
+### Account
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/account` | DELETE | Delete all backend data for the authenticated user (policies, transactions, safety) |
+
+### User Settings (AI service)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/user-settings/:userId` | GET | Fetch user settings |
+| `/api/user-settings/:userId` | PUT | Upsert user settings |
+| `/api/account` | DELETE | Delete all data for the account (settings, chats, backend state) |
+
 ## Policy Rule Types
 
 | Rule | Params | Description |

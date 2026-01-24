@@ -60,7 +60,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "1. ALWAYS use tools to get real-time data. NEVER rely on previous conversation "
     "context for values like balances, prices, or transaction status.\n"
     "2. When asked about balance, ALWAYS call get_treasury_balance - never quote old values.\n"
-    "3. When making purchases, first check the balance, then execute the purchase.\n"
+    "3. When making purchases, first check the balance, then execute the purchase if the policies are met.\n"
     "4. Never create or update spending policies without explicit user approval.\n"
     "5. Be concise but informative in your responses.\n"
     "6. If a tool call fails, explain the error to the user.\n"
@@ -68,8 +68,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "Do not ask for or mention unsupported fields like currency or approval workflows.\n"
     "8. When the user explicitly approves a policy (e.g., 'yes', 'apply it', 'make it'), "
     "you MUST call create_policy with the agreed rules.\n"
-    "9. Do not reveal internal reasoning in the final response. Thoughts must only appear in the thoughts channel.\n"
-    "10. For x402 micropayment demos, ALWAYS use this URL: http://localhost:3001/api/payments/x402/demo/paid-content\n"
+    "9. For x402 micropayment demos, ALWAYS use this URL: http://localhost:3001/api/payments/x402/demo/paid-content\n"
     "   DO NOT use api.demo.com or any other placeholder URLs - they don't exist."
 )
 
@@ -482,6 +481,20 @@ class ChatMessageCreateResponse(BaseModel):
     chat_id: str
     message: MessageResponse
     assistant_message: Optional[MessageResponse] = None
+
+
+class UserSettingsPayload(BaseModel):
+    user_id: str = Field(..., min_length=1)
+    display_name: Optional[str] = None
+    monthly_budget: Optional[float] = None
+    safe_mode: Optional[bool] = None
+    auto_budget: Optional[bool] = None
+    ui_scale: Optional[float] = None
+    updated_at: Optional[str] = None
+
+
+class DeleteAccountRequest(BaseModel):
+    user_id: str = Field(..., min_length=1)
 
 
 def now_iso() -> str:
@@ -1804,6 +1817,83 @@ async def create_message_stream(
         await maybe_set_chat_title(chat_id, full_text, model)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/api/user-settings/{user_id}")
+async def get_user_settings(user_id: str) -> Dict[str, Any]:
+    if not SUPABASE_CLIENT:
+        raise HTTPException(status_code=500, detail="Supabase not configured.")
+    data = await supabase_exec(
+        lambda: SUPABASE_CLIENT.table("user_settings")
+        .select("*")
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if not data:
+        return {}
+    return data[0]
+
+
+@app.put("/api/user-settings/{user_id}")
+async def upsert_user_settings(user_id: str, payload: UserSettingsPayload) -> Dict[str, Any]:
+    if not SUPABASE_CLIENT:
+        raise HTTPException(status_code=500, detail="Supabase not configured.")
+    if hasattr(payload, "model_dump"):
+        record = payload.model_dump(exclude_unset=True)
+    else:
+        record = payload.dict(exclude_unset=True)
+    record["user_id"] = user_id
+    record["updated_at"] = now_iso()
+    data = await supabase_exec(
+        lambda: SUPABASE_CLIENT.table("user_settings")
+        .upsert(record, on_conflict="user_id")
+        .execute()
+    )
+    if not data:
+        return record
+    return data[0]
+
+
+async def delete_auth_user(user_id: str) -> None:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return
+    url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/admin/users/{user_id}"
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+    }
+    try:
+        await HTTP_CLIENT.delete(url, headers=headers)
+    except Exception:
+        # Ignore auth deletion errors so data cleanup still succeeds
+        return
+
+
+@app.delete("/api/account")
+async def delete_account(request: DeleteAccountRequest) -> Dict[str, Any]:
+    if not SUPABASE_CLIENT:
+        raise HTTPException(status_code=500, detail="Supabase not configured.")
+
+    user_id = request.user_id
+
+    # Delete chat data
+    await supabase_exec(lambda: SUPABASE_CLIENT.table("chat_messages").delete().eq("user_id", user_id).execute())
+    await supabase_exec(lambda: SUPABASE_CLIENT.table("chats").delete().eq("user_id", user_id).execute())
+
+    # Delete user settings and treasury/policy data (if tables exist)
+    await supabase_exec(lambda: SUPABASE_CLIENT.table("user_settings").delete().eq("user_id", user_id).execute())
+    await supabase_exec(lambda: SUPABASE_CLIENT.table("policies").delete().eq("user_id", user_id).execute())
+    await supabase_exec(lambda: SUPABASE_CLIENT.table("transactions").delete().eq("user_id", user_id).execute())
+    await supabase_exec(lambda: SUPABASE_CLIENT.table("safety_state").delete().eq("user_id", user_id).execute())
+
+    # Clear in-memory backend state (best effort)
+    await backend_request("DELETE", "/api/account", user_id=user_id)
+
+    # Attempt to remove auth user
+    await delete_auth_user(user_id)
+
+    return {"ok": True}
 
 
 if __name__ == "__main__":

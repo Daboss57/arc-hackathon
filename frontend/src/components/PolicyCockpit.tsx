@@ -4,6 +4,7 @@ import { listPolicies, updatePolicy, type Policy, type Rule } from '../api/aiSer
 interface PolicyCockpitProps {
     refreshKey?: number;
     onPolicyChange?: () => void;
+    userId: string;
 }
 
 function renderRule(rule: Rule): string {
@@ -36,7 +37,7 @@ function renderRule(rule: Rule): string {
     }
 }
 
-export function PolicyCockpit({ refreshKey, onPolicyChange }: PolicyCockpitProps) {
+export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCockpitProps) {
     const [policies, setPolicies] = useState<Policy[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -46,7 +47,7 @@ export function PolicyCockpit({ refreshKey, onPolicyChange }: PolicyCockpitProps
         const load = async () => {
             setLoading(true);
             try {
-                const data = await listPolicies();
+                const data = await listPolicies(userId);
                 if (!active) return;
                 setPolicies(data);
                 setError(null);
@@ -61,11 +62,11 @@ export function PolicyCockpit({ refreshKey, onPolicyChange }: PolicyCockpitProps
         return () => {
             active = false;
         };
-    }, [refreshKey]);
+    }, [refreshKey, userId]);
 
     const handleToggle = async (policy: Policy) => {
         try {
-            await updatePolicy(policy.id, { enabled: !policy.enabled });
+            await updatePolicy(policy.id, { enabled: !policy.enabled }, userId);
             setPolicies((prev) =>
                 prev.map((p) => (p.id === policy.id ? { ...p, enabled: !p.enabled } : p))
             );

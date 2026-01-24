@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient';
+import { AI_SERVICE_URL } from '../api/aiService';
 
 export interface UserSettings {
     user_id: string;
@@ -41,31 +41,20 @@ export function saveLocalSettings(settings: UserSettings): void {
 }
 
 export async function fetchUserSettings(userId: string): Promise<UserSettings | null> {
-    const { data, error } = await supabase
-        .from('user_settings')
-        .select('*')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-    if (error) {
-        return null;
-    }
-    return data as UserSettings | null;
+    const response = await fetch(`${AI_SERVICE_URL}/api/user-settings/${userId}`);
+    if (!response.ok) return null;
+    const data = await response.json().catch(() => null);
+    if (!data || !data.user_id) return null;
+    return data as UserSettings;
 }
 
 export async function upsertUserSettings(settings: UserSettings): Promise<UserSettings | null> {
-    const payload = {
-        ...settings,
-        updated_at: new Date().toISOString(),
-    };
-    const { data, error } = await supabase
-        .from('user_settings')
-        .upsert(payload, { onConflict: 'user_id' })
-        .select('*')
-        .single();
-
-    if (error) {
-        return null;
-    }
-    return data as UserSettings;
+    const response = await fetch(`${AI_SERVICE_URL}/api/user-settings/${settings.user_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+    });
+    if (!response.ok) return null;
+    const data = await response.json().catch(() => null);
+    return (data as UserSettings) || null;
 }

@@ -20,7 +20,7 @@ pip install -r requirements.txt
 python src/agent.py
 ```
 
-### Required: Supabase chat storage
+### Required: Supabase storage
 
 Set these in `ai-service/.env` to store chats/messages:
 
@@ -29,7 +29,7 @@ SUPABASE_URL=your_supabase_url
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
 
-Create the tables in Supabase (SQL editor):
+Create the tables in Supabase (SQL editor). You can run `docs/supabase.sql` from the repo, or use the snippets below for chat storage:
 
 ```
 create table public.chats (

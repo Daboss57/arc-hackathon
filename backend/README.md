@@ -34,3 +34,5 @@ npm run dev
 | `CIRCLE_ENTITY_SECRET` | Circle entity secret for signing |
 | `ARC_RPC_URL` | Arc blockchain RPC endpoint |
 | `PORT` | Server port (default: 3001) |
+| `SUPABASE_URL` | Supabase project URL (optional, enables DB persistence) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (optional, enables DB persistence) |

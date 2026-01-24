@@ -381,7 +381,7 @@ export async function getSpendingAnalytics(userId?: string): Promise<SpendingAna
         byCategory[cat] = (byCategory[cat] || 0) + (parseAmount(tx.amount) || 0);
     }
 
-    const policyLimits = getPolicySpendingLimits();
+    const policyLimits = getPolicySpendingLimits(userId);
     const dailyLimit = policyLimits.dailyLimit;
     const monthlyBudget = policyLimits.monthlyBudget;
 
@@ -428,8 +428,8 @@ export function resetStoreForTesting() {
     setTransactions([]);
 }
 
-function getPolicySpendingLimits(): { dailyLimit: number; monthlyBudget: number } {
-    const policies = getPolicies().filter(policy => policy.enabled);
+function getPolicySpendingLimits(userId?: string): { dailyLimit: number; monthlyBudget: number } {
+    const policies = getPolicies(userId).filter(policy => policy.enabled);
     let dailyLimit: number | null = null;
     let monthlyBudget: number | null = null;
 
