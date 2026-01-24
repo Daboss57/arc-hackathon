@@ -818,28 +818,44 @@ async def db_update_chat(chat_id: str, fields: Dict[str, Any]) -> None:
 
 async def validate_against_supabase_policies(user_id: str, amount: float, category: Optional[str] = None) -> Dict[str, Any]:
     """Validate a payment against user's policies in Supabase"""
-    print(f"[POLICY CHECK] Starting validation for user={user_id}, amount={amount}, category={category}")
-    print(f"[POLICY CHECK] SUPABASE_ENABLED={SUPABASE_ENABLED}, SUPABASE_CLIENT={'set' if SUPABASE_CLIENT else 'None'}")
+    print(f"[POLICY CHECK] ====================================")
+    print(f"[POLICY CHECK] Starting validation")
+    print(f"[POLICY CHECK] user_id = '{user_id}'")
+    print(f"[POLICY CHECK] amount = {amount}")
+    print(f"[POLICY CHECK] category = {category}")
+    print(f"[POLICY CHECK] SUPABASE_ENABLED = {SUPABASE_ENABLED}")
+    print(f"[POLICY CHECK] SUPABASE_CLIENT = {'CONNECTED' if SUPABASE_CLIENT else 'NOT CONNECTED'}")
+    print(f"[POLICY CHECK] ====================================")
     
     if not SUPABASE_ENABLED or not SUPABASE_CLIENT:
-        print("[POLICY CHECK] ❌ Supabase not enabled/connected - SKIPPING validation (should block!)")
-        # FAIL CLOSED: If we can't validate, block the transaction
+        print("[POLICY CHECK] ❌ BLOCKING: Supabase not enabled/connected")
         return {"approved": False, "reason": "Policy system unavailable - transaction blocked for safety"}
     
     if not user_id:
-        print("[POLICY CHECK] ❌ No user_id provided - SKIPPING validation")
+        print("[POLICY CHECK] ❌ BLOCKING: No user_id provided")
         return {"approved": False, "reason": "User ID required for policy validation"}
     
     try:
+        # First, let's see ALL policies in the database to debug
+        all_policies_result = SUPABASE_CLIENT.table("policies").select("id, user_id, name, enabled").execute()
+        all_policies = all_policies_result.data if all_policies_result.data else []
+        print(f"[POLICY CHECK] DEBUG: Total policies in database: {len(all_policies)}")
+        for p in all_policies:
+            print(f"[POLICY CHECK] DEBUG: Policy '{p.get('name')}' - user_id='{p.get('user_id')}' enabled={p.get('enabled')}")
+        
+        # Now query for this specific user
         result = SUPABASE_CLIENT.table("policies").select("*").eq("user_id", user_id).eq("enabled", True).execute()
         policies = result.data if result.data else []
-        print(f"[POLICY CHECK] Found {len(policies)} enabled policies for user")
+        print(f"[POLICY CHECK] Found {len(policies)} enabled policies for user_id='{user_id}'")
     except Exception as e:
-        print(f"[POLICY CHECK] ❌ Error fetching policies: {e}")
+        print(f"[POLICY CHECK] ❌ BLOCKING: Error fetching policies: {e}")
+        import traceback
+        traceback.print_exc()
         return {"approved": False, "reason": f"Could not fetch policies: {e}"}
     
     if not policies:
-        print("[POLICY CHECK] ✅ No active policies - allowing transaction")
+        print(f"[POLICY CHECK] ⚠️ No active policies found for user_id='{user_id}'")
+        print(f"[POLICY CHECK] ⚠️ Allowing transaction (no policies to enforce)")
         return {"approved": True, "reason": "No active policies"}
     
     applied_policies = []
