@@ -1,8 +1,8 @@
-const DEFAULT_AI_URL = import.meta.env.DEV ? 'http://localhost:3002' : '';
-const DEFAULT_BACKEND_URL = import.meta.env.DEV ? 'http://localhost:3001' : '';
+const DEFAULT_AI_URL = (import.meta.env.DEV ? 'http://localhost:3002' : '').replace(/\/$/, '');
+const DEFAULT_BACKEND_URL = (import.meta.env.DEV ? 'http://localhost:3001' : '').replace(/\/$/, '');
 
-export const AI_SERVICE_URL = (import.meta.env.VITE_AI_SERVICE_URL as string | undefined) ?? DEFAULT_AI_URL;
-export const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string | undefined) ?? DEFAULT_BACKEND_URL;
+export const AI_SERVICE_URL = ((import.meta.env.VITE_AI_SERVICE_URL as string | undefined) ?? DEFAULT_AI_URL).replace(/\/$/, '');
+export const BACKEND_URL = ((import.meta.env.VITE_BACKEND_URL as string | undefined) ?? DEFAULT_BACKEND_URL).replace(/\/$/, '');
 
 export interface Chat {
     id: string;
