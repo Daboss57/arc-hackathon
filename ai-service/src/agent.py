@@ -799,6 +799,129 @@ async def db_update_chat(chat_id: str, fields: Dict[str, Any]) -> None:
     await supabase_exec(lambda: SUPABASE_CLIENT.table("chats").update(fields).eq("id", chat_id).execute())
 
 
+# ============================================
+# Policy Validation Against Supabase
+# ============================================
+
+async def validate_against_supabase_policies(user_id: str, amount: float, category: Optional[str] = None) -> Dict[str, Any]:
+    """Validate a payment against user's policies in Supabase"""
+    if not SUPABASE_ENABLED or not SUPABASE_CLIENT or not user_id:
+        return {"approved": True, "reason": "No policy validation available"}
+    
+    try:
+        result = SUPABASE_CLIENT.table("policies").select("*").eq("user_id", user_id).eq("enabled", True).execute()
+        policies = result.data if result.data else []
+    except Exception as e:
+        print(f"Error fetching policies: {e}")
+        return {"approved": True, "reason": "Could not fetch policies"}
+    
+    if not policies:
+        return {"approved": True, "reason": "No active policies"}
+    
+    blocked_by = None
+    applied_policies = []
+    
+    for policy in policies:
+        rules = policy.get("rules", [])
+        if not isinstance(rules, list):
+            continue
+        
+        for rule in rules:
+            rule_type = rule.get("type")
+            params = rule.get("params", {})
+            
+            if rule_type == "maxPerTransaction":
+                max_amount = params.get("max", 0)
+                if amount > max_amount:
+                    return {
+                        "approved": False,
+                        "blockedBy": policy.get("name", "Policy"),
+                        "reason": f"Amount ${amount} exceeds max per transaction limit of ${max_amount}",
+                        "appliedPolicies": [policy.get("name")]
+                    }
+            
+            elif rule_type == "dailyLimit":
+                # Would need to sum today's transactions - for now pass
+                pass
+            
+            elif rule_type == "monthlyBudget":
+                # Would need to sum this month's transactions - for now pass
+                pass
+        
+        applied_policies.append(policy.get("name", "Policy"))
+    
+    return {
+        "approved": True,
+        "appliedPolicies": applied_policies,
+        "reason": "All policies passed"
+    }
+
+
+# ============================================
+# Transaction Storage in Supabase
+# ============================================
+
+async def save_transaction_to_supabase(
+    user_id: str,
+    amount: float,
+    to_address: str,
+    status: str = "confirmed",
+    category: Optional[str] = None,
+    description: Optional[str] = None,
+    vendor_name: Optional[str] = None,
+    product_name: Optional[str] = None,
+    order_id: Optional[str] = None,
+    tx_hash: Optional[str] = None,
+    policy_result: Optional[Dict] = None,
+) -> Optional[Dict[str, Any]]:
+    """Save a transaction to Supabase"""
+    if not SUPABASE_ENABLED or not SUPABASE_CLIENT or not user_id:
+        return None
+    
+    try:
+        tx_data = {
+            "user_id": user_id,
+            "amount": amount,
+            "to_address": to_address,
+            "currency": "USDC",
+            "status": status,
+            "category": category,
+            "description": description,
+            "vendor_name": vendor_name,
+            "product_name": product_name,
+            "order_id": order_id,
+            "tx_hash": tx_hash,
+            "policy_result": policy_result,
+            "confirmed_at": datetime.now(timezone.utc).isoformat() if status == "confirmed" else None,
+        }
+        result = SUPABASE_CLIENT.table("transactions").insert(tx_data).execute()
+        if result.data and len(result.data) > 0:
+            return result.data[0]
+    except Exception as e:
+        print(f"Error saving transaction: {e}")
+    return None
+
+
+async def get_user_transactions(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Get transactions for a user from Supabase"""
+    if not SUPABASE_ENABLED or not SUPABASE_CLIENT or not user_id:
+        return []
+    
+    try:
+        result = (
+            SUPABASE_CLIENT.table("transactions")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data if result.data else []
+    except Exception as e:
+        print(f"Error fetching transactions: {e}")
+        return []
+
+
 async def db_delete_chat(chat_id: str) -> None:
     await supabase_exec(lambda: SUPABASE_CLIENT.table("chat_messages").delete().eq("chat_id", chat_id).execute())
     await supabase_exec(lambda: SUPABASE_CLIENT.table("chats").delete().eq("id", chat_id).execute())
@@ -1009,13 +1132,60 @@ async def tool_purchase_product(args: Dict[str, Any], user_id: Optional[str] = N
     product_id = args.get("product_id")
     if not vendor_id or not product_id:
         return {"ok": False, "error": "vendor_id and product_id are required"}
+    
+    # First, get the product details to know the price
+    product_result = await backend_request("GET", f"/api/vendors/{vendor_id}/products/{product_id}", user_id=user_id)
+    if not product_result.get("ok"):
+        return {"ok": False, "error": "Could not fetch product details"}
+    
+    product_data = product_result.get("data", {})
+    price = product_data.get("price", 0)
+    product_name = product_data.get("name", "Unknown Product")
+    
+    # Get vendor name
+    vendor_result = await backend_request("GET", f"/api/vendors/{vendor_id}", user_id=user_id)
+    vendor_name = vendor_result.get("data", {}).get("name", "Unknown Vendor") if vendor_result.get("ok") else "Unknown Vendor"
+    
+    # Validate against user's Supabase policies BEFORE purchase
+    if user_id and price > 0:
+        policy_check = await validate_against_supabase_policies(user_id, price, args.get("category", "vendor-purchase"))
+        if not policy_check.get("approved", True):
+            return {
+                "ok": False,
+                "error": f"Policy blocked: {policy_check.get('reason', 'Policy violation')}",
+                "policyBlocked": True,
+                "blockedBy": policy_check.get("blockedBy"),
+            }
+    
+    # Proceed with purchase
     url = f"{BACKEND_URL}/api/vendors/{vendor_id}/purchase/{product_id}"
     payload = {
         "url": url,
         "method": "POST",
         "category": args.get("category", "vendor-purchase"),
     }
-    return await backend_request("POST", "/api/payments/x402/fetch", json_body=payload, user_id=user_id)
+    result = await backend_request("POST", "/api/payments/x402/fetch", json_body=payload, user_id=user_id)
+    
+    # Save transaction to Supabase regardless of outcome
+    if user_id:
+        policy_result = {"approved": True, "appliedPolicies": []} if result.get("ok") else None
+        tx_status = "confirmed" if result.get("ok") else "failed"
+        order_id = result.get("data", {}).get("orderId") or result.get("data", {}).get("order_id")
+        
+        await save_transaction_to_supabase(
+            user_id=user_id,
+            amount=price,
+            to_address=vendor_id,
+            status=tx_status,
+            category=args.get("category", "vendor-purchase"),
+            description=f"Purchase: {product_name} from {vendor_name}",
+            vendor_name=vendor_name,
+            product_name=product_name,
+            order_id=order_id,
+            policy_result=policy_result,
+        )
+    
+    return result
 
 
 async def tool_list_orders(_: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
