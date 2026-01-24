@@ -29,12 +29,6 @@ interface ReceiptsPanelProps {
     userId: string;
 }
 
-function truncateHash(hash?: string): string {
-    if (!hash) return 'N/A';
-    if (hash.length <= 12) return hash;
-    return `${hash.slice(0, 6)}…${hash.slice(-4)}`;
-}
-
 export function ReceiptsPanel({ refreshKey, userId }: ReceiptsPanelProps) {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [error, setError] = useState<string | null>(null);
