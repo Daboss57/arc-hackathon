@@ -220,12 +220,56 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
                         );
                     }
                 }
+                if (event.type === 'thought') {
+                    if (!streamingIdRef.current) {
+                        const draftId = `stream-${Date.now()}`;
+                        streamingIdRef.current = draftId;
+                        setStreamingMessageId(draftId);
+                        updateMessagesForChat(activeChatId, (prev) => [
+                            ...prev,
+                            {
+                                id: draftId,
+                                role: 'assistant',
+                                content: '',
+                                created_at: new Date().toISOString(),
+                                metadata: { thoughts: [event.text] },
+                            },
+                        ]);
+                    } else {
+                        const currentId = streamingIdRef.current;
+                        updateMessagesForChat(activeChatId, (prev) =>
+                            prev.map((msg) => {
+                                if (msg.id !== currentId) return msg;
+                                const existingThoughts = msg.metadata?.thoughts ?? [];
+                                return {
+                                    ...msg,
+                                    metadata: {
+                                        ...(msg.metadata || {}),
+                                        thoughts: [...existingThoughts, event.text],
+                                    },
+                                };
+                            })
+                        );
+                    }
+                }
                 if (event.type === 'done') {
                     const currentId = streamingIdRef.current;
                     if (currentId) {
                         updateMessagesForChat(activeChatId, (prev) =>
                             prev.map((msg) =>
-                                msg.id === currentId ? event.message : msg
+                                msg.id === currentId
+                                    ? {
+                                          ...event.message,
+                                          metadata: {
+                                              ...(msg.metadata || {}),
+                                              ...(event.message.metadata || {}),
+                                              thoughts: [
+                                                  ...(msg.metadata?.thoughts || []),
+                                                  ...(event.message.metadata?.thoughts || []),
+                                              ],
+                                          },
+                                      }
+                                    : msg
                             )
                         );
                     } else {

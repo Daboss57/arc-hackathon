@@ -734,6 +734,15 @@ select {
   background: rgba(var(--accent-rgb), 0.2);
 }
 
+.tool-calls.thoughts summary {
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.tool-calls.thoughts summary:hover {
+  background: rgba(56, 189, 248, 0.22);
+}
+
 .tool-list {
   margin-top: 8px;
   padding: 8px;
@@ -761,6 +770,12 @@ select {
 .tool-item.error {
   background: rgba(239, 68, 68, 0.1);
   color: var(--error);
+}
+
+.tool-item.thought {
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--text-secondary);
+  font-family: 'Manrope', sans-serif;
 }
 
 /* Loading */

@@ -110,6 +110,21 @@ export function MessageList({ messages, isLoading, showTyping, onSuggestionClick
                             {formatMessage(message.content)}
                         </div>
 
+                        {message.metadata?.thoughts && message.metadata.thoughts.length > 0 && (
+                            <details className="tool-calls thoughts">
+                                <summary>
+                                    💭 {message.metadata.thoughts.length} thought{message.metadata.thoughts.length > 1 ? 's' : ''} streamed
+                                </summary>
+                                <div className="tool-list">
+                                    {message.metadata.thoughts.map((thought, i) => (
+                                        <div key={i} className="tool-item thought">
+                                            <span className="tool-name">{thought}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </details>
+                        )}
+
                         {message.metadata?.executed_tools && message.metadata.executed_tools.length > 0 && (
                             <details className="tool-calls">
                                 <summary>

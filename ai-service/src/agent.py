@@ -45,7 +45,7 @@ if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY and create_client:
 
 AgentClient = genai.Client(api_key=API_KEY) if API_KEY else None
 
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-pro-preview")
 DEFAULT_SYSTEM_PROMPT = (
     "You are an AI financial assistant for AutoWealth that helps users manage their "
     "treasury and make purchases. You have access to tools for checking balances, "
@@ -325,7 +325,7 @@ class MessageCreateRequest(BaseModel):
     role: Literal["user", "assistant", "system"] = "user"
     respond: bool = True
     model: Optional[str] = None
-    include_thoughts: bool = False
+    include_thoughts: bool = True
     use_tools: bool = True
     use_search: bool = False
 
@@ -993,10 +993,10 @@ async def generate_assistant_message(
 
     config = types.GenerateContentConfig(
         system_instruction=system_prompt,
-        max_output_tokens=1000,
+        max_output_tokens=10000,
         thinking_config=types.ThinkingConfig(
             include_thoughts=include_thoughts,
-            thinking_level="low",
+            thinking_level="high",
         ),
         tools=tools,
     )
@@ -1057,7 +1057,7 @@ async def generate_chat_title(context_text: str, existing_titles: List[str], mod
         model=model,
         contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
         config=types.GenerateContentConfig(
-            max_output_tokens=20,
+            max_output_tokens=50,
             tools=[],
         ),
     )
@@ -1284,23 +1284,74 @@ async def create_message_stream(
             if request.use_tools:
                 tool_config = types.GenerateContentConfig(
                     system_instruction=system_prompt,
-                    max_output_tokens=1000,
+                    max_output_tokens=10000,
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=request.include_thoughts,
-                        thinking_level="low",
+                        thinking_level="high",
                     ),
                     tools=[function_tool],
                 )
-                _, executed_tools, contents = await run_tool_loop(
-                    contents, tool_config, model, user_id
-                )
+
+                # Inline tool loop so we can stream tool calls and thoughts
+                for _ in range(MAX_TOOL_STEPS):
+                    response = await asyncio.to_thread(
+                        AgentClient.models.generate_content,
+                        model=model,
+                        contents=contents,
+                        config=tool_config,
+                    )
+
+                    if not response.candidates:
+                        break
+                    candidate = response.candidates[0]
+                    if not candidate.content or not candidate.content.parts:
+                        break
+
+                    # Stream thoughts if available and requested
+                    if request.include_thoughts:
+                        for part in candidate.content.parts:
+                            if getattr(part, "thought", False) and getattr(part, "text", None):
+                                yield f"data: {json.dumps({'type': 'thought', 'text': part.text})}\n\n"
+
+                    function_calls = [
+                        part.function_call
+                        for part in candidate.content.parts
+                        if part.function_call
+                    ]
+                    if not function_calls:
+                        break
+
+                    contents.append(candidate.content)
+
+                    for function_call in function_calls:
+                        args = normalize_args(function_call.args)
+                        yield f"data: {json.dumps({'type': 'tool_call', 'name': function_call.name, 'args': args})}\n\n"
+                        handler = TOOL_HANDLERS.get(function_call.name)
+                        if not handler:
+                            result = {"ok": False, "error": f"Unknown tool: {function_call.name}"}
+                        else:
+                            result = await handler(args, user_id)
+
+                        executed_tools.append(
+                            {"name": function_call.name, "args": args, "result": result}
+                        )
+
+                        yield f"data: {json.dumps({'type': 'tool_result', 'name': function_call.name, 'result': result})}\n\n"
+
+                        response_part = types.Part(
+                            function_response=types.FunctionResponse(
+                                name=function_call.name,
+                                response=result,
+                            )
+                        )
+                        contents.append(types.Content(role="tool", parts=[response_part]))
 
             stream_config = types.GenerateContentConfig(
                 system_instruction=system_prompt,
-                max_output_tokens=1000,
+                max_output_tokens=10000,
                 thinking_config=types.ThinkingConfig(
-                    include_thoughts=False,
-                    thinking_level="low",
+                    include_thoughts=request.include_thoughts,
+                    thinking_level="high",
                 ),
                 tools=[],
             )
@@ -1312,6 +1363,8 @@ async def create_message_stream(
             )
 
             async for chunk in iterate_in_threadpool(stream):
+                if getattr(chunk, "thought", None) and request.include_thoughts:
+                    yield f"data: {json.dumps({'type': 'thought', 'text': chunk.thought})}\n\n"
                 if chunk.text:
                     full_text += chunk.text
                     yield f"data: {json.dumps({'type': 'delta', 'text': chunk.text})}\n\n"
