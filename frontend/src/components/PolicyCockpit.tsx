@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { 
-    fetchPolicies, 
+import {
+    listPolicies,
     updatePolicy,
     deletePolicy as deletePolicyInDb,
-    type Policy, 
-    type PolicyRule 
-} from '../lib/policyService';
+    type Policy,
+    type Rule,
+} from '../api/aiService';
 
 interface PolicyCockpitProps {
     userId: string;
@@ -13,7 +13,7 @@ interface PolicyCockpitProps {
     onPolicyChange?: () => void;
 }
 
-function renderRule(rule: PolicyRule): string {
+function renderRule(rule: Rule): string {
     switch (rule.type) {
         case 'maxPerTransaction': {
             const max = (rule.params as { max?: number }).max ?? 0;
@@ -54,7 +54,7 @@ export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCock
         const load = async () => {
             setLoading(true);
             try {
-                const data = await fetchPolicies(userId);
+                const data = await listPolicies(userId);
                 if (!active) return;
                 setPolicies(data);
                 setError(null);
@@ -74,7 +74,7 @@ export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCock
 
     const handleToggle = async (policy: Policy) => {
         try {
-            await updatePolicy(policy.id, { enabled: !policy.enabled });
+            await updatePolicy(policy.id, { enabled: !policy.enabled }, userId);
             setPolicies((prev) =>
                 prev.map((p) => (p.id === policy.id ? { ...p, enabled: !p.enabled } : p))
             );
@@ -87,7 +87,7 @@ export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCock
     const handleDelete = async (policyId: string) => {
         if (!confirm('Delete this policy?')) return;
         try {
-            await deletePolicyInDb(policyId);
+            await deletePolicyInDb(policyId, userId);
             setPolicies((prev) => prev.filter((p) => p.id !== policyId));
             onPolicyChange?.();
         } catch (err) {
@@ -116,9 +116,9 @@ export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCock
                             <div>
                                 <h4>{policy.name || 'Unnamed Policy'}</h4>
                                 {policy.description && <p>{policy.description}</p>}
-                                {policy.updated_at && (
+                                {policy.updatedAt && (
                                     <span className="policy-updated">
-                                        Updated {new Date(policy.updated_at).toLocaleDateString()}
+                                        Updated {new Date(policy.updatedAt).toLocaleDateString()}
                                     </span>
                                 )}
                             </div>

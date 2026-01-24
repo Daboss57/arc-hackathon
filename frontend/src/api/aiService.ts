@@ -340,6 +340,14 @@ export async function updatePolicy(
     return response.json();
 }
 
+export async function deletePolicy(policyId: string, userId?: string): Promise<void> {
+    const response = await fetch(`${BACKEND_URL}/api/policy/${policyId}`, {
+        method: 'DELETE',
+        headers: withUserId(userId),
+    });
+    if (!response.ok) throw new Error('Failed to delete policy');
+}
+
 export async function getSpendingAnalytics(userId?: string): Promise<SpendingAnalytics> {
     const response = await fetch(`${BACKEND_URL}/api/treasury/analytics`, {
         headers: withUserId(userId),
