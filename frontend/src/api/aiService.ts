@@ -105,6 +105,7 @@ export interface X402FetchResult {
     paymentMade?: boolean;
     paymentAmount?: string;
     txHash?: string;
+    receipt?: Transaction;
     error?: string;
     policyBlocked?: boolean;
 }
@@ -134,6 +135,29 @@ export interface SafetyStatus {
 
 function withUserId(userId?: string): Record<string, string> {
     return userId ? { 'x-user-id': userId } : {};
+}
+
+function getReceiptCacheKey(userId: string): string {
+    return `autowealth-receipts:${userId}`;
+}
+
+function readCachedReceipts(userId: string): Transaction[] {
+    try {
+        const raw = localStorage.getItem(getReceiptCacheKey(userId));
+        if (!raw) return [];
+        const parsed = JSON.parse(raw) as Transaction[];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function writeCachedReceipts(userId: string, receipts: Transaction[]): void {
+    try {
+        localStorage.setItem(getReceiptCacheKey(userId), JSON.stringify(receipts));
+    } catch {
+        // ignore storage errors
+    }
 }
 
 export async function createChat(userId: string, title?: string): Promise<Chat> {
@@ -326,7 +350,26 @@ export async function getTransactionHistory(params: { limit?: number; offset?: n
     });
     if (!response.ok) throw new Error('Failed to load transactions');
     const data = await response.json();
-    return data.transactions as Transaction[];
+    const serverTransactions = (data.transactions as Transaction[]) || [];
+    if (!userId) return serverTransactions;
+
+    const cached = readCachedReceipts(userId);
+    if (cached.length === 0) return serverTransactions;
+
+    const merged = new Map<string, Transaction>();
+    for (const tx of cached) {
+        const key = tx.txHash || tx.id;
+        merged.set(key, tx);
+    }
+    for (const tx of serverTransactions) {
+        const key = tx.txHash || tx.id;
+        merged.set(key, tx);
+    }
+
+    const combined = Array.from(merged.values()).sort((a, b) =>
+        (b.createdAt || '').localeCompare(a.createdAt || '')
+    );
+    return combined;
 }
 
 export async function x402Fetch(params: {
@@ -361,7 +404,15 @@ export async function x402Fetch(params: {
             policyBlocked: error?.policyBlocked,
         };
     }
-    return response.json();
+    const result = await response.json();
+    if (params.userId && result?.receipt) {
+        const current = readCachedReceipts(params.userId);
+        const receipt = result.receipt as Transaction;
+        const key = receipt.txHash || receipt.id;
+        const next = [receipt, ...current.filter((tx) => (tx.txHash || tx.id) !== key)];
+        writeCachedReceipts(params.userId, next.slice(0, 50));
+    }
+    return result as X402FetchResult;
 }
 
 export async function validatePayment(payload: {

@@ -16,6 +16,7 @@ export interface X402FetchResult {
     paymentMade?: boolean;
     paymentAmount?: string;
     txHash?: string;
+    receipt?: unknown;
     error?: string;
     policyBlocked?: boolean;
 }
@@ -144,7 +145,7 @@ export async function x402Fetch(
         }
 
         // Record the transaction for analytics
-        await recordTransaction({
+        const receipt = await recordTransaction({
             from: wallet.address,
             to: recipient,
             amount: paymentRequirements.amount,
@@ -187,6 +188,7 @@ export async function x402Fetch(
                 paymentMade: true,
                 paymentAmount: paymentRequirements.amount,
                 txHash: transferResult.txHash,
+                receipt,
                 data: { message: 'Payment made but content access pending confirmation' },
             };
         }
@@ -205,6 +207,7 @@ export async function x402Fetch(
             paymentMade: true,
             paymentAmount: paymentRequirements.amount,
             txHash: transferResult.txHash,
+            receipt,
         };
     } catch (err) {
         logger.error('x402 fetch failed', { url, error: String(err) });
