@@ -1184,27 +1184,49 @@ async def tool_purchase_product(args: Dict[str, Any], user_id: Optional[str] = N
     vendor_result = await backend_request("GET", f"/api/vendors/{vendor_id}", user_id=user_id)
     vendor_name = vendor_result.get("data", {}).get("name", "Unknown Vendor") if vendor_result.get("ok") else "Unknown Vendor"
     
-    # Validate against user's Supabase policies BEFORE purchase
+    # =======================================================
+    # POLICY VALIDATION - MUST PASS BEFORE ANY PURCHASE
+    # =======================================================
     print(f"[PURCHASE] === POLICY VALIDATION START ===")
     print(f"[PURCHASE] user_id={user_id}, price={price}")
     
+    policy_blocked = False
+    block_reason = ""
+    blocked_by = ""
+    
+    # STEP 1: Try Supabase policies first (preferred)
     if user_id and price > 0:
         policy_check = await validate_against_supabase_policies(user_id, price, args.get("category", "vendor-purchase"))
-        print(f"[PURCHASE] Policy check result: {policy_check}")
+        print(f"[PURCHASE] Supabase policy check result: {policy_check}")
         
         if not policy_check.get("approved", True):
-            print(f"[PURCHASE] 🚫 BLOCKED BY POLICY - returning error")
-            return {
-                "ok": False,
-                "error": f"Policy blocked: {policy_check.get('reason', 'Policy violation')}",
-                "policyBlocked": True,
-                "blockedBy": policy_check.get("blockedBy"),
-            }
-        else:
-            print(f"[PURCHASE] ✅ Policy check passed, proceeding with purchase")
-    else:
-        print(f"[PURCHASE] ⚠️ Skipping policy check: user_id={user_id}, price={price}")
+            policy_blocked = True
+            block_reason = policy_check.get('reason', 'Policy violation')
+            blocked_by = policy_check.get("blockedBy", "User Policy")
     
+    # STEP 2: If Supabase check passed OR wasn't available, do a HARD safety check
+    # This ensures purchases can NEVER exceed reasonable limits even if Supabase fails
+    if not policy_blocked and price > 0:
+        # Fetch user's policies directly via frontend-accessible Supabase if available
+        # Also apply a hard maximum as a safety net
+        HARD_MAX_PER_TRANSACTION = 10.0  # Absolute maximum - no single purchase over $10
+        if price > HARD_MAX_PER_TRANSACTION:
+            policy_blocked = True
+            block_reason = f"Amount ${price:.2f} exceeds hard limit of ${HARD_MAX_PER_TRANSACTION:.2f}"
+            blocked_by = "System Safety Limit"
+            print(f"[PURCHASE] 🚫 HARD LIMIT EXCEEDED: {block_reason}")
+    
+    # If any policy blocked, return error
+    if policy_blocked:
+        print(f"[PURCHASE] 🚫 BLOCKED BY POLICY: {block_reason}")
+        return {
+            "ok": False,
+            "error": f"Policy blocked: {block_reason}",
+            "policyBlocked": True,
+            "blockedBy": blocked_by,
+        }
+    
+    print(f"[PURCHASE] ✅ Policy checks passed, proceeding with purchase")
     print(f"[PURCHASE] === POLICY VALIDATION END ===")
     
     # Proceed with purchase
