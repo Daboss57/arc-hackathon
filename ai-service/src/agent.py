@@ -275,16 +275,15 @@ function_tool = types.Tool(
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if not SUPABASE_ENABLED or not SUPABASE_CLIENT:
-        raise RuntimeError(
-            f"Supabase is required. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY variables in Vercel project settings.\n"
-            f"Current values - URL: {'SET' if SUPABASE_URL else 'MISSING'}, KEY: {'SET' if SUPABASE_SERVICE_ROLE_KEY else 'MISSING'}"
-        )
+    # Try to verify Supabase connection but DONT crash if it fails
+    # This ensures the /health endpoint still works so we can debug
     try:
-        await supabase_exec(lambda: SUPABASE_CLIENT.table("chats").select("id").limit(1).execute())
-        await supabase_exec(lambda: SUPABASE_CLIENT.table("chat_messages").select("id").limit(1).execute())
-    except HTTPException as exc:
-        raise RuntimeError(str(exc.detail)) from exc
+        if SUPABASE_ENABLED and SUPABASE_CLIENT:
+            await supabase_exec(lambda: SUPABASE_CLIENT.table("chats").select("count", count="exact").limit(1).execute())
+    except Exception as e:
+        print(f"Startup Warning: Supabase check failed: {e}")
+        # do not raise, let app start
+    
     yield
     await HTTP_CLIENT.aclose()
 
