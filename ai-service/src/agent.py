@@ -291,7 +291,12 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="AutoWealth AI Service", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:4173",
+        "https://arc-hackathon-frontend.vercel.app",
+        "https://arc-hackathon-frontend-git-main-daboss57s-projects.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

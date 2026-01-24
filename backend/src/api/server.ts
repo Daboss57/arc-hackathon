@@ -14,7 +14,15 @@ import vendorRoutes from './routes/vendors.js';
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+    origin: [
+        'http://localhost:5173',
+        'http://localhost:4173',
+        'https://arc-hackathon-frontend.vercel.app',
+        /\.vercel\.app$/
+    ],
+    credentials: true
+}));
 app.use(express.json());
 
 app.use('/api/treasury', treasuryRoutes);
