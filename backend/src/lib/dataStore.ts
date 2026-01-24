@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import type { Policy } from '../policy/types.js';
@@ -31,8 +30,8 @@ const DEFAULT_STATE: PersistedState = {
     },
 };
 
-const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(moduleDir, '..', '..', '..');
+// Use process.cwd() for Vercel compatibility (no import.meta in CommonJS)
+const projectRoot = process.cwd();
 const legacyStorePath = path.resolve(projectRoot, 'backend', 'data', 'store.json');
 const defaultStorePath = path.resolve(projectRoot, 'data', 'store.json');
 
