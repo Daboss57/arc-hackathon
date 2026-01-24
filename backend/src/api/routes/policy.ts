@@ -5,6 +5,9 @@ const router = Router();
 
 router.get('/', (_req, res) => {
     const userId = _req.headers['x-user-id'] as string | undefined;
+    if (!userId) {
+        return res.status(400).json({ error: 'x-user-id header is required' });
+    }
     const policies = listPolicies(userId);
     res.json({ policies });
 });
@@ -15,12 +18,18 @@ router.post('/', (req, res) => {
         return res.status(400).json({ error: 'name and rules are required' });
     }
     const userId = req.headers['x-user-id'] as string | undefined;
+    if (!userId) {
+        return res.status(400).json({ error: 'x-user-id header is required' });
+    }
     const policy = createPolicy({ name, description, rules: rules as any }, userId);
     res.status(201).json(policy);
 });
 
 router.get('/:id', (req, res) => {
     const userId = req.headers['x-user-id'] as string | undefined;
+    if (!userId) {
+        return res.status(400).json({ error: 'x-user-id header is required' });
+    }
     const policy = getPolicy(req.params.id, userId);
     if (!policy) {
         return res.status(404).json({ error: 'Policy not found' });
@@ -41,6 +50,9 @@ router.put('/:id', (req, res) => {
         updates.rules = rules;
     }
     const userId = req.headers['x-user-id'] as string | undefined;
+    if (!userId) {
+        return res.status(400).json({ error: 'x-user-id header is required' });
+    }
     const policy = updatePolicy(req.params.id, updates as any, userId);
     if (!policy) {
         return res.status(404).json({ error: 'Policy not found' });
@@ -50,6 +62,9 @@ router.put('/:id', (req, res) => {
 
 router.delete('/:id', (req, res) => {
     const userId = req.headers['x-user-id'] as string | undefined;
+    if (!userId) {
+        return res.status(400).json({ error: 'x-user-id header is required' });
+    }
     const deleted = deletePolicy(req.params.id, userId);
     if (!deleted) {
         return res.status(404).json({ error: 'Policy not found' });
@@ -63,6 +78,9 @@ router.post('/validate', async (req, res) => {
         return res.status(400).json({ error: 'amount and recipient are required' });
     }
     const userId = req.headers['x-user-id'] as string | undefined;
+    if (!userId) {
+        return res.status(400).json({ error: 'x-user-id header is required' });
+    }
     const mergedMetadata = userId ? { ...(metadata || {}), userId } : metadata;
     const result = await validatePayment({ amount, recipient, category, description, metadata: mergedMetadata });
     res.json(result);

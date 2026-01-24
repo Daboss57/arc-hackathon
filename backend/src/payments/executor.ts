@@ -19,6 +19,15 @@ export async function executePayment(request: PaymentRequest): Promise<PaymentRe
         recipient: request.recipient
     });
 
+    if (!request.userId) {
+        return {
+            paymentId,
+            status: 'failed',
+            error: 'User ID required to execute payment',
+            policyResult: { passed: false, appliedRules: [], blockedBy: 'Missing User' },
+        };
+    }
+
     const validation = await validatePayment({
         amount: request.amount,
         recipient: request.recipient,

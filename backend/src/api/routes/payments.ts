@@ -12,6 +12,9 @@ router.post('/execute', async (req, res) => {
     }
 
     const userId = req.headers['x-user-id'] as string | undefined;
+    if (!userId) {
+        return res.status(400).json({ error: 'x-user-id header is required' });
+    }
 
     const result = await executePayment({ recipient, amount, category, description, metadata, userId });
 
@@ -30,6 +33,11 @@ router.post('/x402/fetch', async (req, res) => {
         return res.status(400).json({ error: 'url is required' });
     }
 
+    const userId = req.headers['x-user-id'] as string | undefined;
+    if (!userId) {
+        return res.status(400).json({ error: 'x-user-id header is required' });
+    }
+
     const result = await x402Fetch(
         url,
         {
@@ -38,7 +46,7 @@ router.post('/x402/fetch', async (req, res) => {
             body: body ? JSON.stringify(body) : undefined,
         },
         category,
-        req.headers['x-user-id'] as string | undefined,
+        userId,
         metadata
     );
 

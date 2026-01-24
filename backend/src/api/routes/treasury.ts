@@ -25,6 +25,9 @@ router.get('/history', async (req, res) => {
         const limit = parseInt(req.query.limit as string) || 50;
         const offset = parseInt(req.query.offset as string) || 0;
         const userId = req.headers['x-user-id'] as string | undefined;
+        if (!userId) {
+            return res.status(400).json({ error: 'x-user-id header is required' });
+        }
         const history = await getTransactionHistory({ limit, offset }, userId);
         res.json({ transactions: history, limit, offset });
     } catch (err) {
@@ -56,6 +59,9 @@ router.post('/wallet/init', async (_req, res) => {
 router.get('/analytics', async (req, res) => {
     try {
         const userId = req.headers['x-user-id'] as string | undefined;
+        if (!userId) {
+            return res.status(400).json({ error: 'x-user-id header is required' });
+        }
         const analytics = await getSpendingAnalytics(userId);
         res.json(analytics);
     } catch (err) {
@@ -65,12 +71,18 @@ router.get('/analytics', async (req, res) => {
 
 router.get('/safety', (req, res) => {
     const userId = req.headers['x-user-id'] as string | undefined;
+    if (!userId) {
+        return res.status(400).json({ error: 'x-user-id header is required' });
+    }
     const snapshot = getSafetySnapshot(userId);
     res.json(snapshot);
 });
 
 router.post('/safety', (req, res) => {
     const userId = req.headers['x-user-id'] as string | undefined;
+    if (!userId) {
+        return res.status(400).json({ error: 'x-user-id header is required' });
+    }
     const { paymentsPaused, safeMode, resetApproval, autoBudget } = req.body || {};
 
     if (typeof paymentsPaused === 'boolean') {

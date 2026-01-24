@@ -129,6 +129,20 @@ export async function validatePayment(ctx: PaymentContext): Promise<ValidationSu
     }
 
     const userId = typeof ctx.metadata?.userId === 'string' ? String(ctx.metadata.userId) : undefined;
+    if (!userId) {
+        return {
+            approved: false,
+            blockedBy: 'Missing User',
+            results: [
+                {
+                    passed: false,
+                    policyId: 'system',
+                    policyName: 'Missing User',
+                    reason: 'User ID is required to evaluate policies',
+                },
+            ],
+        };
+    }
     const requiresApproval =
         userId && isSafeModeEnabled(userId) && !hasUserApprovedOnce(userId);
     if (requiresApproval) {
