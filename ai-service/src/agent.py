@@ -805,56 +805,91 @@ async def db_update_chat(chat_id: str, fields: Dict[str, Any]) -> None:
 
 async def validate_against_supabase_policies(user_id: str, amount: float, category: Optional[str] = None) -> Dict[str, Any]:
     """Validate a payment against user's policies in Supabase"""
-    if not SUPABASE_ENABLED or not SUPABASE_CLIENT or not user_id:
-        return {"approved": True, "reason": "No policy validation available"}
+    print(f"[POLICY CHECK] Starting validation for user={user_id}, amount={amount}, category={category}")
+    print(f"[POLICY CHECK] SUPABASE_ENABLED={SUPABASE_ENABLED}, SUPABASE_CLIENT={'set' if SUPABASE_CLIENT else 'None'}")
+    
+    if not SUPABASE_ENABLED or not SUPABASE_CLIENT:
+        print("[POLICY CHECK] ❌ Supabase not enabled/connected - SKIPPING validation (should block!)")
+        # FAIL CLOSED: If we can't validate, block the transaction
+        return {"approved": False, "reason": "Policy system unavailable - transaction blocked for safety"}
+    
+    if not user_id:
+        print("[POLICY CHECK] ❌ No user_id provided - SKIPPING validation")
+        return {"approved": False, "reason": "User ID required for policy validation"}
     
     try:
         result = SUPABASE_CLIENT.table("policies").select("*").eq("user_id", user_id).eq("enabled", True).execute()
         policies = result.data if result.data else []
+        print(f"[POLICY CHECK] Found {len(policies)} enabled policies for user")
     except Exception as e:
-        print(f"Error fetching policies: {e}")
-        return {"approved": True, "reason": "Could not fetch policies"}
+        print(f"[POLICY CHECK] ❌ Error fetching policies: {e}")
+        return {"approved": False, "reason": f"Could not fetch policies: {e}"}
     
     if not policies:
+        print("[POLICY CHECK] ✅ No active policies - allowing transaction")
         return {"approved": True, "reason": "No active policies"}
     
-    blocked_by = None
     applied_policies = []
     
     for policy in policies:
+        policy_name = policy.get("name", "Unnamed Policy")
         rules = policy.get("rules", [])
+        print(f"[POLICY CHECK] Checking policy '{policy_name}' with {len(rules) if isinstance(rules, list) else 0} rules")
+        print(f"[POLICY CHECK] Raw rules data: {rules}")
+        
         if not isinstance(rules, list):
+            print(f"[POLICY CHECK] ⚠️ Rules is not a list, skipping policy")
             continue
         
         for rule in rules:
             rule_type = rule.get("type")
             params = rule.get("params", {})
+            print(f"[POLICY CHECK] Rule type='{rule_type}', params={params}")
             
             if rule_type == "maxPerTransaction":
                 max_amount = params.get("max", 0)
-                if amount > max_amount:
-                    return {
+                # Ensure numeric comparison
+                try:
+                    max_amount = float(max_amount) if max_amount else 0
+                    purchase_amount = float(amount)
+                except (ValueError, TypeError) as e:
+                    print(f"[POLICY CHECK] ❌ Error converting amounts: {e}")
+                    continue
+                    
+                print(f"[POLICY CHECK] Comparing: purchase_amount={purchase_amount} > max_amount={max_amount} ? {purchase_amount > max_amount}")
+                
+                if purchase_amount > max_amount:
+                    block_result = {
                         "approved": False,
-                        "blockedBy": policy.get("name", "Policy"),
-                        "reason": f"Amount ${amount} exceeds max per transaction limit of ${max_amount}",
-                        "appliedPolicies": [policy.get("name")]
+                        "blockedBy": policy_name,
+                        "reason": f"Amount ${purchase_amount:.2f} exceeds max per transaction limit of ${max_amount:.2f}",
+                        "appliedPolicies": [policy_name]
                     }
+                    print(f"[POLICY CHECK] 🚫 BLOCKED: {block_result}")
+                    return block_result
+                else:
+                    print(f"[POLICY CHECK] ✅ Passed maxPerTransaction check (${purchase_amount:.2f} <= ${max_amount:.2f})")
             
             elif rule_type == "dailyLimit":
                 # Would need to sum today's transactions - for now pass
-                pass
+                print("[POLICY CHECK] ⚠️ dailyLimit not fully implemented, skipping")
             
             elif rule_type == "monthlyBudget":
                 # Would need to sum this month's transactions - for now pass
-                pass
+                print("[POLICY CHECK] ⚠️ monthlyBudget not fully implemented, skipping")
+            
+            else:
+                print(f"[POLICY CHECK] ⚠️ Unknown rule type: {rule_type}")
         
-        applied_policies.append(policy.get("name", "Policy"))
+        applied_policies.append(policy_name)
     
-    return {
+    approve_result = {
         "approved": True,
         "appliedPolicies": applied_policies,
         "reason": "All policies passed"
     }
+    print(f"[POLICY CHECK] ✅ APPROVED: {approve_result}")
+    return approve_result
 
 
 # ============================================
@@ -1128,6 +1163,8 @@ async def tool_get_product(args: Dict[str, Any], user_id: Optional[str] = None) 
 
 
 async def tool_purchase_product(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    print(f"[PURCHASE] Starting purchase: vendor_id={args.get('vendor_id')}, product_id={args.get('product_id')}, user_id={user_id}")
+    
     vendor_id = args.get("vendor_id")
     product_id = args.get("product_id")
     if not vendor_id or not product_id:
@@ -1141,21 +1178,34 @@ async def tool_purchase_product(args: Dict[str, Any], user_id: Optional[str] = N
     product_data = product_result.get("data", {})
     price = product_data.get("price", 0)
     product_name = product_data.get("name", "Unknown Product")
+    print(f"[PURCHASE] Product: {product_name}, Price: {price} USDC")
     
     # Get vendor name
     vendor_result = await backend_request("GET", f"/api/vendors/{vendor_id}", user_id=user_id)
     vendor_name = vendor_result.get("data", {}).get("name", "Unknown Vendor") if vendor_result.get("ok") else "Unknown Vendor"
     
     # Validate against user's Supabase policies BEFORE purchase
+    print(f"[PURCHASE] === POLICY VALIDATION START ===")
+    print(f"[PURCHASE] user_id={user_id}, price={price}")
+    
     if user_id and price > 0:
         policy_check = await validate_against_supabase_policies(user_id, price, args.get("category", "vendor-purchase"))
+        print(f"[PURCHASE] Policy check result: {policy_check}")
+        
         if not policy_check.get("approved", True):
+            print(f"[PURCHASE] 🚫 BLOCKED BY POLICY - returning error")
             return {
                 "ok": False,
                 "error": f"Policy blocked: {policy_check.get('reason', 'Policy violation')}",
                 "policyBlocked": True,
                 "blockedBy": policy_check.get("blockedBy"),
             }
+        else:
+            print(f"[PURCHASE] ✅ Policy check passed, proceeding with purchase")
+    else:
+        print(f"[PURCHASE] ⚠️ Skipping policy check: user_id={user_id}, price={price}")
+    
+    print(f"[PURCHASE] === POLICY VALIDATION END ===")
     
     # Proceed with purchase
     url = f"{BACKEND_URL}/api/vendors/{vendor_id}/purchase/{product_id}"
