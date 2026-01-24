@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { Message } from '../api/aiService';
 
 interface MessageListProps {
@@ -8,9 +9,9 @@ interface MessageListProps {
 }
 
 // Simple markdown-like formatting
-function formatMessage(text: string): React.ReactNode[] {
+function formatMessage(text: string): ReactNode[] {
     const lines = text.split('\n');
-    const elements: React.ReactNode[] = [];
+    const elements: ReactNode[] = [];
     let listItems: string[] = [];
     let listKey = 0;
 
@@ -27,7 +28,7 @@ function formatMessage(text: string): React.ReactNode[] {
         }
     };
 
-    const formatInline = (text: string): React.ReactNode => {
+    const formatInline = (text: string): ReactNode => {
         // Bold: **text** or __text__
         const parts = text.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
         return parts.map((part, i) => {
