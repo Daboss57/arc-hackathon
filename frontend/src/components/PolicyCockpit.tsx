@@ -1,13 +1,20 @@
 import { useEffect, useState } from 'react';
-import { listPolicies, updatePolicy, type Policy, type Rule } from '../api/aiService';
+import { 
+    fetchPolicies, 
+    updatePolicy as updatePolicyInDb, 
+    deletePolicy as deletePolicyInDb,
+    type Policy, 
+    type PolicyRule 
+} from '../lib/policyService';
 
 interface PolicyCockpitProps {
+    userId: string;
     refreshKey?: number;
     onPolicyChange?: () => void;
     userId: string;
 }
 
-function renderRule(rule: Rule): string {
+function renderRule(rule: PolicyRule): string {
     switch (rule.type) {
         case 'maxPerTransaction': {
             const max = (rule.params as { max?: number }).max ?? 0;
@@ -43,6 +50,7 @@ export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCock
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
+        if (!userId) return;
         let active = true;
         const load = async () => {
             setLoading(true);
@@ -54,6 +62,7 @@ export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCock
             } catch (err) {
                 if (!active) return;
                 setError('Failed to load policies');
+                console.error(err);
             } finally {
                 if (active) setLoading(false);
             }
@@ -73,6 +82,17 @@ export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCock
             onPolicyChange?.();
         } catch (err) {
             setError('Failed to update policy');
+        }
+    };
+
+    const handleDelete = async (policyId: string) => {
+        if (!confirm('Delete this policy?')) return;
+        try {
+            await deletePolicyInDb(policyId);
+            setPolicies((prev) => prev.filter((p) => p.id !== policyId));
+            onPolicyChange?.();
+        } catch (err) {
+            setError('Failed to delete policy');
         }
     };
 
@@ -97,20 +117,29 @@ export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCock
                             <div>
                                 <h4>{policy.name || 'Unnamed Policy'}</h4>
                                 {policy.description && <p>{policy.description}</p>}
-                                {policy.updatedAt && (
+                                {policy.updated_at && (
                                     <span className="policy-updated">
-                                        Updated {new Date(policy.updatedAt).toLocaleDateString()}
+                                        Updated {new Date(policy.updated_at).toLocaleDateString()}
                                     </span>
                                 )}
                             </div>
-                            <label className="toggle-row inline policy-toggle">
-                                <span>{policy.enabled ? 'Enabled' : 'Disabled'}</span>
-                                <input
-                                    type="checkbox"
-                                    checked={policy.enabled}
-                                    onChange={() => handleToggle(policy)}
-                                />
-                            </label>
+                            <div className="policy-actions">
+                                <label className="toggle-row inline policy-toggle">
+                                    <span>{policy.enabled ? 'On' : 'Off'}</span>
+                                    <input
+                                        type="checkbox"
+                                        checked={policy.enabled}
+                                        onChange={() => handleToggle(policy)}
+                                    />
+                                </label>
+                                <button 
+                                    className="btn btn-secondary small"
+                                    onClick={() => handleDelete(policy.id)}
+                                    title="Delete policy"
+                                >
+                                    🗑️
+                                </button>
+                            </div>
                         </div>
                         <div className="policy-rules">
                             {rules.map((rule, index) => (
@@ -124,7 +153,7 @@ export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCock
                 })}
 
                 {!loading && policies.length === 0 && (
-                    <div className="panel-muted">No policies yet. Generate one in Advisor Review.</div>
+                    <div className="panel-muted">No policies yet. Ask the AI to create one!</div>
                 )}
             </div>
         </section>

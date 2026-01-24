@@ -1401,6 +1401,17 @@ select {
   color: var(--text-muted);
 }
 
+.policy-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.policy-actions .btn {
+  padding: 4px 8px;
+  font-size: 0.7rem;
+}
+
 .policy-updated {
   font-size: 0.6rem;
   color: var(--text-muted);
@@ -1713,11 +1724,18 @@ select {
   gap: 8px;
 }
 
+.receipt-product {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
 .receipt-meta {
   display: flex;
   gap: 10px;
   color: var(--text-muted);
   margin-top: 4px;
+  font-size: 0.7rem;
 }
 
 .receipt-policy {
