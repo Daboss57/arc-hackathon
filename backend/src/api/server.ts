@@ -27,6 +27,26 @@ app.use(cors({
 }));
 app.use(express.json());
 
+let initPromise: Promise<void> | null = null;
+async function bootstrapServices() {
+    await initDataStore();
+    loadPoliciesFromStore();
+    hydrateTransactionsFromStore();
+    await initializeWallet();
+    seedDefaultPolicies();
+}
+
+function ensureInitialized() {
+    if (!initPromise) {
+        initPromise = bootstrapServices();
+    }
+    return initPromise;
+}
+
+app.use((_req, _res, next) => {
+    ensureInitialized().then(() => next()).catch(next);
+});
+
 app.use('/api/treasury', treasuryRoutes);
 app.use('/api/policy', policyRoutes);
 app.use('/api/payments', paymentRoutes);
@@ -61,12 +81,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 async function start() {
     logger.info('Initializing services...');
 
-    await initDataStore();
-    loadPoliciesFromStore();
-    hydrateTransactionsFromStore();
-
-    await initializeWallet();
-    seedDefaultPolicies();
+    await ensureInitialized();
 
     app.listen(config.PORT, () => {
         logger.info(`Server running on port ${config.PORT}`);
