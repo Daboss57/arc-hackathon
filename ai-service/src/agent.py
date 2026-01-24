@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -73,6 +74,72 @@ HTTP_TIMEOUT = float(os.getenv("BACKEND_TIMEOUT", "60"))
 HTTP_CLIENT = httpx.AsyncClient(timeout=HTTP_TIMEOUT)
 
 grounding_tool = types.Tool(google_search=types.GoogleSearch())
+
+PENDING_POLICY_BY_CHAT: Dict[str, Dict[str, Any]] = {}
+
+
+def _extract_policy_draft(text: str) -> Optional[Dict[str, Any]]:
+    lowered = text.lower()
+    if "policy" not in lowered and "spending" not in lowered:
+        return None
+
+    name_match = re.search(r"policy\s+name\s+is\s+([\w\s\-]+)", lowered)
+    if not name_match:
+        name_match = re.search(r"name\s+is\s+([\w\s\-]+)", lowered)
+    name = name_match.group(1).strip() if name_match else ""
+
+    limit_match = re.search(r"(?:limit|max(?:imum)?)(?:\s+per\s+transaction)?\s*(?:is|=)?\s*\$?(\d+(?:\.\d+)?)", lowered)
+    amount = float(limit_match.group(1)) if limit_match else None
+
+    if not name or amount is None:
+        return None
+
+    if "daily" in lowered and "limit" in lowered:
+        rule_type = "dailyLimit"
+        params = {"limit": amount}
+    elif "monthly" in lowered and ("budget" in lowered or "limit" in lowered):
+        rule_type = "monthlyBudget"
+        params = {"budget": amount}
+    else:
+        rule_type = "maxPerTransaction"
+        params = {"max": amount}
+
+    return {
+        "name": name,
+        "description": f"User requested policy via chat ({rule_type}).",
+        "rules": [{"type": rule_type, "params": params}],
+    }
+
+
+def _is_confirmation(text: str) -> bool:
+    lowered = text.strip().lower()
+    return any(
+        phrase in lowered
+        for phrase in (
+            "yes",
+            "confirm",
+            "approved",
+            "approve",
+            "make it",
+            "do it",
+            "go ahead",
+            "create it",
+            "ok",
+            "okay",
+        )
+    )
+
+
+def _describe_rule(rule: Dict[str, Any]) -> str:
+    rule_type = rule.get("type")
+    params = rule.get("params", {}) if isinstance(rule.get("params"), dict) else {}
+    if rule_type == "maxPerTransaction":
+        return f"max per transaction {params.get('max', '?')} USDC"
+    if rule_type == "dailyLimit":
+        return f"daily limit {params.get('limit', '?')} USDC"
+    if rule_type == "monthlyBudget":
+        return f"monthly budget {params.get('budget', '?')} USDC"
+    return "custom rules"
 
 
 def schema_object(properties: Dict[str, Any], required: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -819,6 +886,39 @@ async def tool_list_orders(_: Dict[str, Any], user_id: Optional[str] = None) -> 
     return await backend_request("GET", "/api/vendors/orders/all", user_id=user_id)
 
 
+async def maybe_handle_policy_request(
+    chat_id: str,
+    user_id: Optional[str],
+    content: str,
+) -> Optional[Dict[str, Any]]:
+    draft = _extract_policy_draft(content)
+    confirmed = _is_confirmation(content)
+
+    if confirmed and draft:
+        result = await tool_create_policy(draft, user_id)
+        executed_tools = [{"name": "create_policy", "args": draft, "result": result}]
+        message = build_tool_fallback(executed_tools) or "Policy creation completed."
+        return {"content": message, "metadata": {"executed_tools": executed_tools}}
+
+    if confirmed:
+        pending = PENDING_POLICY_BY_CHAT.pop(chat_id, None)
+        if pending:
+            result = await tool_create_policy(pending, user_id)
+            executed_tools = [{"name": "create_policy", "args": pending, "result": result}]
+            message = build_tool_fallback(executed_tools) or "Policy creation completed."
+            return {"content": message, "metadata": {"executed_tools": executed_tools}}
+
+    if draft:
+        PENDING_POLICY_BY_CHAT[chat_id] = draft
+        rule_desc = _describe_rule(draft["rules"][0]) if draft.get("rules") else "custom rules"
+        return {
+            "content": f"I can create policy '{draft['name']}' with {rule_desc}. Reply 'confirm' to proceed.",
+            "metadata": None,
+        }
+
+    return None
+
+
 TOOL_HANDLERS = {
     "get_treasury_balance": tool_get_treasury_balance,
     "get_treasury_history": tool_get_treasury_history,
@@ -1305,19 +1405,28 @@ async def create_message(
 
     assistant_message = None
     if request.respond and request.role == "user":
-        assistant = await generate_assistant_message(
-            messages=message_snapshot,
-            system_prompt=system_prompt,
-            model=model,
-            include_thoughts=request.include_thoughts,
-            use_tools=request.use_tools,
-            use_search=request.use_search,
-            user_id=chat["user_id"],
-        )
-        assistant_message = build_message("assistant", assistant["content"], assistant["metadata"])
+        policy_result = await maybe_handle_policy_request(chat_id, chat["user_id"], request.content)
+        if policy_result:
+            assistant_message = build_message(
+                "assistant",
+                policy_result["content"],
+                policy_result.get("metadata"),
+            )
+        else:
+            assistant = await generate_assistant_message(
+                messages=message_snapshot,
+                system_prompt=system_prompt,
+                model=model,
+                include_thoughts=request.include_thoughts,
+                use_tools=request.use_tools,
+                use_search=request.use_search,
+                user_id=chat["user_id"],
+            )
+            assistant_message = build_message("assistant", assistant["content"], assistant["metadata"])
+
         await db_insert_message(chat_id, chat["user_id"], assistant_message)
         await db_update_chat(chat_id, {"updated_at": assistant_message["created_at"]})
-        await maybe_set_chat_title(chat_id, assistant["content"], model)
+        await maybe_set_chat_title(chat_id, assistant_message["content"], model)
 
     return {
         "chat_id": chat_id,
@@ -1352,6 +1461,18 @@ async def create_message_stream(
         yield f"data: {json.dumps({'type': 'ack', 'message': message})}\n\n"
         full_text = ""
         metadata: Optional[Dict[str, Any]] = None
+        policy_result = await maybe_handle_policy_request(chat_id, user_id, request.content)
+        if policy_result:
+            full_text = policy_result["content"]
+            metadata = policy_result.get("metadata")
+            yield f"data: {json.dumps({'type': 'delta', 'text': full_text})}\n\n"
+
+            assistant_message = build_message("assistant", full_text, metadata)
+            await db_insert_message(chat_id, user_id, assistant_message)
+            await db_update_chat(chat_id, {"updated_at": assistant_message["created_at"]})
+            yield f"data: {json.dumps({'type': 'done', 'message': assistant_message})}\n\n"
+            await maybe_set_chat_title(chat_id, full_text, model)
+            return
         try:
             if not AgentClient:
                 raise HTTPException(
