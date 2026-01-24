@@ -64,7 +64,16 @@ async function start() {
     });
 }
 
-start().catch(err => {
-    logger.error('Failed to start server', { error: String(err) });
-    process.exit(1);
-});
+// Export app for Vercel
+export default app;
+
+if (process.env.NODE_ENV !== 'test') {
+    // Only start server if run directly (not imported by Vercel)
+    const isVercel = process.env.VERCEL === '1';
+    if (!isVercel) {
+        start().catch(err => {
+            logger.error('Failed to start server', { error: String(err) });
+            process.exit(1);
+        });
+    }
+}
