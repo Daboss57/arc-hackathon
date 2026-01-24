@@ -860,14 +860,42 @@ async def tool_get_spending_analytics(_: Dict[str, Any], user_id: Optional[str] 
 
 
 async def tool_list_policies(_: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    """List policies - try Supabase first, fall back to backend"""
+    if SUPABASE_ENABLED and SUPABASE_CLIENT and user_id:
+        try:
+            result = SUPABASE_CLIENT.table("policies").select("*").eq("user_id", user_id).execute()
+            policies = result.data if result.data else []
+            return {"ok": True, "policies": policies}
+        except Exception as e:
+            print(f"Supabase list_policies error: {e}")
     return await backend_request("GET", "/api/policy", user_id=user_id)
 
 
 async def tool_create_policy(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
+    """Create a policy - save to Supabase if available"""
     name = args.get("name")
     rules = args.get("rules")
     if not name or not rules:
         return {"ok": False, "error": "name and rules are required"}
+    
+    # Try to save to Supabase first
+    if SUPABASE_ENABLED and SUPABASE_CLIENT and user_id:
+        try:
+            policy_data = {
+                "user_id": user_id,
+                "name": name,
+                "description": args.get("description"),
+                "rules": rules,
+                "enabled": True,
+            }
+            result = SUPABASE_CLIENT.table("policies").insert(policy_data).execute()
+            if result.data and len(result.data) > 0:
+                return {"ok": True, "policy": result.data[0]}
+        except Exception as e:
+            print(f"Supabase create_policy error: {e}")
+            # Fall through to backend
+    
+    # Fallback to backend
     payload = {
         "name": name,
         "description": args.get("description"),

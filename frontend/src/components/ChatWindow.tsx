@@ -367,7 +367,7 @@ export function ChatWindow({ userId, defaultMonthlyBudget }: ChatWindowProps) {
                         onApplied={() => setRefreshKey((t) => t + 1)}
                     />
                     <SafetyControlsPanel refreshKey={refreshKey} userId={userId} onChange={() => setRefreshKey((t) => t + 1)} />
-                    <PolicyCockpit refreshKey={refreshKey} onPolicyChange={() => setRefreshKey((t) => t + 1)} />
+                    <PolicyCockpit userId={userId} refreshKey={refreshKey} onPolicyChange={() => setRefreshKey((t) => t + 1)} />
                     <AnalyticsPanel refreshKey={refreshKey} userId={userId} />
                     <PolicySimulationPanel userId={userId} />
                     <MarketplacePanel userId={userId} onPurchase={() => setRefreshKey((t) => t + 1)} />

@@ -1397,6 +1397,17 @@ select {
   color: var(--text-muted);
 }
 
+.policy-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.policy-actions .btn {
+  padding: 4px 8px;
+  font-size: 0.7rem;
+}
+
 .policy-updated {
   font-size: 0.6rem;
   color: var(--text-muted);
