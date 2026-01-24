@@ -8,9 +8,9 @@ interface MessageListProps {
 }
 
 // Simple markdown-like formatting
-function formatMessage(text: string): JSX.Element[] {
+function formatMessage(text: string): React.ReactNode[] {
     const lines = text.split('\n');
-    const elements: JSX.Element[] = [];
+    const elements: React.ReactNode[] = [];
     let listItems: string[] = [];
     let listKey = 0;
 
