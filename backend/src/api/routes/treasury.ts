@@ -94,7 +94,6 @@ router.post('/safety', (req, res) => {
 
 router.get('/debug', async (_req, res) => {
     try {
-        const { getWalletTokenBalance } = await import('../../treasury/wallet.service.js');
         // We need to access the internal circleClient or minimal logic to test
         const { config } = await import('../../lib/config.js');
         const { initiateDeveloperControlledWalletsClient } = await import('@circle-fin/developer-controlled-wallets');
