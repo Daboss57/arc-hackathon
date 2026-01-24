@@ -147,6 +147,24 @@ function_tool = types.Tool(
             ),
         ),
         types.FunctionDeclaration(
+            name="create_spending_policy",
+            description=(
+                "Alias of create_policy. Create a new spending policy with rules. "
+                "Valid rule types are: maxPerTransaction, dailyLimit, monthlyBudget, vendorWhitelist, categoryLimit."
+            ),
+            parameters=schema_object(
+                {
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "rules": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                },
+                required=["name", "rules"],
+            ),
+        ),
+        types.FunctionDeclaration(
             name="update_policy",
             description="Update an existing spending policy.",
             parameters=schema_object(
@@ -164,8 +182,33 @@ function_tool = types.Tool(
             ),
         ),
         types.FunctionDeclaration(
+            name="update_spending_policy",
+            description="Alias of update_policy. Update an existing spending policy.",
+            parameters=schema_object(
+                {
+                    "policy_id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "enabled": {"type": "boolean"},
+                    "rules": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                },
+                required=["policy_id"],
+            ),
+        ),
+        types.FunctionDeclaration(
             name="delete_policy",
             description="Delete a spending policy.",
+            parameters=schema_object(
+                {"policy_id": {"type": "string"}},
+                required=["policy_id"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="delete_spending_policy",
+            description="Alias of delete_policy. Delete a spending policy.",
             parameters=schema_object(
                 {"policy_id": {"type": "string"}},
                 required=["policy_id"],
@@ -783,8 +826,11 @@ TOOL_HANDLERS = {
     "get_spending_analytics": tool_get_spending_analytics,
     "list_policies": tool_list_policies,
     "create_policy": tool_create_policy,
+    "create_spending_policy": tool_create_policy,
     "update_policy": tool_update_policy,
+    "update_spending_policy": tool_update_policy,
     "delete_policy": tool_delete_policy,
+    "delete_spending_policy": tool_delete_policy,
     "validate_payment": tool_validate_payment,
     "execute_payment": tool_execute_payment,
     "x402_fetch": tool_x402_fetch,
@@ -1397,12 +1443,35 @@ async def create_message_stream(
                 config=stream_config,
             )
 
+            plan_buffer = ""
+            plan_mode: Optional[bool] = None
+            buffered_text = ""
+
             async for chunk in iterate_in_threadpool(stream):
                 if getattr(chunk, "thought", None) and request.include_thoughts:
                     yield f"data: {json.dumps({'type': 'thought', 'text': chunk.thought})}\n\n"
                 if chunk.text:
-                    full_text += chunk.text
-                    yield f"data: {json.dumps({'type': 'delta', 'text': chunk.text})}\n\n"
+                    text = chunk.text
+                    if plan_mode is None:
+                        buffered_text += text
+                        if len(buffered_text) >= 6 or "\n" in buffered_text:
+                            trimmed = buffered_text.lstrip().lower()
+                            if trimmed.startswith("plan:") or trimmed.startswith("thought:") or trimmed.startswith("reasoning:") or trimmed.startswith("analysis:"):
+                                plan_mode = True
+                                plan_buffer += buffered_text
+                            else:
+                                plan_mode = False
+                                full_text += buffered_text
+                                yield f"data: {json.dumps({'type': 'delta', 'text': buffered_text})}\n\n"
+                            buffered_text = ""
+                        continue
+
+                    if plan_mode:
+                        plan_buffer += text
+                        continue
+
+                    full_text += text
+                    yield f"data: {json.dumps({'type': 'delta', 'text': text})}\n\n"
 
             metadata = {"executed_tools": executed_tools} if executed_tools else None
         except HTTPException as exc:
@@ -1412,7 +1481,15 @@ async def create_message_stream(
             yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
             return
 
-        full_text, extra_thoughts = sanitize_user_visible_text(full_text)
+        if plan_mode is None and buffered_text:
+            full_text += buffered_text
+            yield f"data: {json.dumps({'type': 'delta', 'text': buffered_text})}\n\n"
+        if plan_mode and plan_buffer:
+            extra_thoughts = [plan_buffer.strip()]
+        else:
+            extra_thoughts = []
+        full_text, sanitized_thoughts = sanitize_user_visible_text(full_text)
+        extra_thoughts.extend(sanitized_thoughts)
         if extra_thoughts:
             for thought in extra_thoughts:
                 yield f"data: {json.dumps({'type': 'thought', 'text': thought})}\n\n"
