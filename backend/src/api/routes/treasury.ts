@@ -123,7 +123,7 @@ router.get('/debug', async (_req, res) => {
             status: 'success',
             walletId: config.CIRCLE_WALLET_ID,
             data: response.data,
-            raw: response
+            // raw: response // Removing circular reference
         });
 
     } catch (err) {
