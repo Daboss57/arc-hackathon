@@ -79,6 +79,19 @@ function App() {
 
   const userLabel = settings?.display_name || session.user.email || 'User';
 
+  const handleSignOut = async () => {
+    // Clear local state first
+    setSession(null);
+    setShowAuth(false);
+    setSettings(null);
+    // Then try to sign out from Supabase (ignore errors)
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch {
+      // Ignore - we've already cleared local state
+    }
+  };
+
   return (
     <div className="app">
       <div className="app-shell">
@@ -86,7 +99,7 @@ function App() {
           activeView={activeView}
           onNavigate={setActiveView}
           userLabel={userLabel}
-          onSignOut={() => supabase.auth.signOut()}
+          onSignOut={handleSignOut}
         />
         <div className="app-body">
           {activeView === 'dashboard' ? (
