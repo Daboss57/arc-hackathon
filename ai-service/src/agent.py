@@ -277,7 +277,8 @@ function_tool = types.Tool(
 async def lifespan(_: FastAPI):
     if not SUPABASE_ENABLED or not SUPABASE_CLIENT:
         raise RuntimeError(
-            "Supabase is required. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in ai-service/.env."
+            f"Supabase is required. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY variables in Vercel project settings.\n"
+            f"Current values - URL: {'SET' if SUPABASE_URL else 'MISSING'}, KEY: {'SET' if SUPABASE_SERVICE_ROLE_KEY else 'MISSING'}"
         )
     try:
         await supabase_exec(lambda: SUPABASE_CLIENT.table("chats").select("id").limit(1).execute())
@@ -301,6 +302,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "ok",
+        "timestamp": now_iso(),
+        "supabase": "connected" if SUPABASE_CLIENT else "disconnected",
+        "models": DEFAULT_MODEL
+    }
 
 
 
