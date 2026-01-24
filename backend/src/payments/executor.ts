@@ -63,7 +63,7 @@ export async function executePayment(request: PaymentRequest): Promise<PaymentRe
             paymentId,
             status: 'failed',
             error: 'Insufficient funds',
-            policyResult: { passed: true, appliedRules },
+            policyResult: { passed: true, appliedRules: appliedPolicies },
         };
     }
 

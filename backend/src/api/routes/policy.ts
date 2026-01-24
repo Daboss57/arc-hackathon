@@ -13,7 +13,7 @@ router.post('/', (req, res) => {
     if (!name || !rules || !Array.isArray(rules)) {
         return res.status(400).json({ error: 'name and rules are required' });
     }
-    const policy = createPolicy({ name, description, rules });
+    const policy = createPolicy({ name, description, rules: rules as any });
     res.status(201).json(policy);
 });
 
@@ -32,7 +32,7 @@ router.put('/:id', (req, res) => {
     if (description !== undefined) updates.description = description;
     if (enabled !== undefined) updates.enabled = enabled;
     if (rules !== undefined) updates.rules = rules;
-    const policy = updatePolicy(req.params.id, updates);
+    const policy = updatePolicy(req.params.id, updates as any);
     if (!policy) {
         return res.status(404).json({ error: 'Policy not found' });
     }
