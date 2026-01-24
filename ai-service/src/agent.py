@@ -63,7 +63,10 @@ DEFAULT_SYSTEM_PROMPT = (
     "4. Never create or update spending policies without explicit user approval.\n"
     "5. Be concise but informative in your responses.\n"
     "6. If a tool call fails, explain the error to the user.\n"
-    "7. For x402 micropayment demos, ALWAYS use this URL: http://localhost:3001/api/payments/x402/demo/paid-content\n"
+    "7. When the user explicitly approves a policy (e.g., 'yes', 'apply it', 'make it'), "
+    "you MUST call create_policy with the agreed rules.\n"
+    "8. Do not reveal internal reasoning in the final response. Thoughts must only appear in the thoughts channel.\n"
+    "9. For x402 micropayment demos, ALWAYS use this URL: http://localhost:3001/api/payments/x402/demo/paid-content\n"
     "   DO NOT use api.demo.com or any other placeholder URLs - they don't exist."
 )
 
@@ -464,6 +467,94 @@ def normalize_args(raw_args: Any) -> Dict[str, Any]:
         return dict(raw_args)
     except TypeError:
         return {"_raw": str(raw_args)}
+
+
+def _parse_number(text: str) -> Optional[float]:
+    try:
+        import re
+
+        match = re.search(r"(\d+(?:\.\d+)?)", text.replace(",", ""))
+        if not match:
+            return None
+        return float(match.group(1))
+    except Exception:
+        return None
+
+
+def extract_policy_from_text(text: str) -> Optional[Dict[str, Any]]:
+    if not text:
+        return None
+    lines = text.splitlines()
+    name: Optional[str] = None
+    rules: List[Dict[str, Any]] = []
+
+    for raw in lines:
+        line = raw.strip()
+        lower = line.lower()
+        if not line:
+            continue
+        if "policy name" in lower or lower.startswith("policy name") or lower.startswith("name:"):
+            if ":" in line:
+                name = line.split(":", 1)[1].strip()
+            else:
+                import re
+                match = re.search(r"policy name\s*(?:is)?\s*(.+)$", line, re.IGNORECASE)
+                if match:
+                    name = match.group(1).strip()
+        if "max" in lower and ("transaction" in lower or "per transaction" in lower):
+            amount = _parse_number(line)
+            if amount is not None:
+                rules.append({"type": "maxPerTransaction", "params": {"max": amount}})
+        if "daily" in lower and "limit" in lower:
+            amount = _parse_number(line)
+            if amount is not None:
+                rules.append({"type": "dailyLimit", "params": {"limit": amount}})
+        if ("monthly" in lower and "budget" in lower) or ("monthly" in lower and "limit" in lower):
+            amount = _parse_number(line)
+            if amount is not None:
+                rules.append({"type": "monthlyBudget", "params": {"budget": amount}})
+
+    # Fallback: single "limit" mention without qualifier -> maxPerTransaction
+    if not rules:
+        lower = text.lower()
+        if "limit" in lower or "max" in lower:
+            amount = _parse_number(text)
+            if amount is not None:
+                rules.append({"type": "maxPerTransaction", "params": {"max": amount}})
+
+    if not rules:
+        return None
+
+    return {
+        "name": name or "Custom Spending Policy",
+        "description": "Created from chat approval.",
+        "rules": rules,
+    }
+
+
+def user_explicitly_approves(text: str) -> bool:
+    lower = (text or "").lower()
+    return any(
+        phrase in lower
+        for phrase in (
+            "yes",
+            "approve",
+            "approved",
+            "make it",
+            "create it",
+            "create",
+            "apply",
+            "do it",
+            "go ahead",
+        )
+    )
+
+
+def build_recent_context(messages: List[Dict[str, Any]], limit: int = 4) -> str:
+    if not messages:
+        return ""
+    recent = [m for m in messages if m.get("role") in ("user", "assistant")][-limit:]
+    return "\n".join(str(m.get("content") or "") for m in recent if m.get("content"))
 
 
 async def supabase_exec(action):
@@ -1079,6 +1170,27 @@ async def generate_assistant_message(
 
     contents = build_contents(messages)
 
+    # Fast-path: if user explicitly approves and we can parse a policy, create it immediately.
+    if use_tools:
+        last_user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
+        user_text = str(last_user.get("content") or "") if last_user else ""
+        combined_text = build_recent_context(messages, limit=5)
+
+        if ("policy" in combined_text.lower()) and user_explicitly_approves(user_text):
+            policy_payload = extract_policy_from_text(combined_text)
+            if policy_payload:
+                result = await tool_create_policy(policy_payload, user_id)
+                metadata = {"executed_tools": [{"name": "create_policy", "args": policy_payload, "result": result}]}
+                if result.get("ok"):
+                    return {
+                        "content": f"✅ Policy created: {policy_payload['name']}",
+                        "metadata": metadata,
+                    }
+                return {
+                    "content": f"⚠️ Failed to create policy: {result.get('error')}",
+                    "metadata": metadata,
+                }
+
     if use_tools:
         response, executed_tools = await run_with_tools(contents, config, model, user_id)
     else:
@@ -1361,6 +1473,34 @@ async def create_message_stream(
 
             contents = build_contents(message_snapshot)
             executed_tools: List[Dict[str, Any]] = []
+
+            # Fast-path policy creation in streaming mode
+            if request.use_tools:
+                user_text = str(message.get("content") or "")
+                combined_text = build_recent_context(message_snapshot, limit=5)
+
+                if ("policy" in combined_text.lower()) and user_explicitly_approves(user_text):
+                    policy_payload = extract_policy_from_text(combined_text)
+                    if policy_payload:
+                        yield f"data: {json.dumps({'type': 'tool_call', 'name': 'create_policy', 'args': policy_payload})}\n\n"
+                        result = await tool_create_policy(policy_payload, user_id)
+                        executed_tools.append({"name": "create_policy", "args": policy_payload, "result": result})
+                        yield f"data: {json.dumps({'type': 'tool_result', 'name': 'create_policy', 'result': result})}\n\n"
+                        if result.get("ok"):
+                            response_text = f"✅ Policy created: {policy_payload['name']}"
+                        else:
+                            response_text = f"⚠️ Failed to create policy: {result.get('error')}"
+
+                        assistant_message = build_message(
+                            "assistant",
+                            response_text,
+                            {"executed_tools": executed_tools},
+                        )
+                        await db_insert_message(chat_id, user_id, assistant_message)
+                        await db_update_chat(chat_id, {"updated_at": assistant_message["created_at"]})
+                        yield f"data: {json.dumps({'type': 'done', 'message': assistant_message})}\n\n"
+                        await maybe_set_chat_title(chat_id, response_text, model)
+                        return
 
             if request.use_tools:
                 tool_config = types.GenerateContentConfig(
