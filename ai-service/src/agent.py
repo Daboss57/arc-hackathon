@@ -944,18 +944,20 @@ async def tool_execute_payment(args: Dict[str, Any], user_id: Optional[str] = No
 
 
 async def tool_x402_fetch(args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
-    """X402 fetch - requires policy validation for any payment URLs"""
+    """X402 fetch - BLOCKED for purchases. Use purchase_product instead."""
     url = args.get("url")
     if not url:
         return {"ok": False, "error": "url is required"}
     
-    # If this looks like a purchase URL, we need to validate
-    # Extract potential price from category or estimate
-    # For now, block all x402 fetches that aren't going through purchase_product
-    if "purchase" in url.lower() or "pay" in url.lower():
-        print(f"[X402_FETCH] ⚠️ Detected purchase URL: {url}")
-        print(f"[X402_FETCH] This should go through purchase_product for policy enforcement")
-        # Allow but log - the actual enforcement should be in purchase_product
+    # BLOCK any purchase URLs - they MUST go through purchase_product for policy enforcement
+    if "purchase" in url.lower() or "pay" in url.lower() or "/vendors/" in url.lower():
+        print(f"[X402_FETCH] 🚫 BLOCKED: Purchase URL detected: {url}")
+        return {
+            "ok": False,
+            "error": "Direct x402 purchases are blocked. Use the purchase_product tool instead for policy enforcement.",
+            "policyBlocked": True,
+            "blockedBy": "System Policy",
+        }
     
     payload = {
         "url": url,
