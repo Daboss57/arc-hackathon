@@ -29,8 +29,13 @@ if not API_KEY:
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3001").rstrip("/")
 
-SUPABASE_URL = dotenv.get_key(dotenv.find_dotenv(), "SUPABASE_URL")
-SUPABASE_SERVICE_ROLE_KEY = dotenv.get_key(dotenv.find_dotenv(), "SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+if not SUPABASE_URL:
+    SUPABASE_URL = dotenv.get_key(dotenv.find_dotenv(), "SUPABASE_URL")
+
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+if not SUPABASE_SERVICE_ROLE_KEY:
+    SUPABASE_SERVICE_ROLE_KEY = dotenv.get_key(dotenv.find_dotenv(), "SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_ENABLED = False
 SUPABASE_CLIENT = None
 
