@@ -64,10 +64,12 @@ DEFAULT_SYSTEM_PROMPT = (
     "4. Never create or update spending policies without explicit user approval.\n"
     "5. Be concise but informative in your responses.\n"
     "6. If a tool call fails, explain the error to the user.\n"
-    "7. When the user explicitly approves a policy (e.g., 'yes', 'apply it', 'make it'), "
+    "7. The ONLY supported policy rules are: maxPerTransaction, dailyLimit, monthlyBudget, vendorWhitelist, categoryLimit. "
+    "Do not ask for or mention unsupported fields like currency or approval workflows.\n"
+    "8. When the user explicitly approves a policy (e.g., 'yes', 'apply it', 'make it'), "
     "you MUST call create_policy with the agreed rules.\n"
-    "8. Do not reveal internal reasoning in the final response. Thoughts must only appear in the thoughts channel.\n"
-    "9. For x402 micropayment demos, ALWAYS use this URL: http://localhost:3001/api/payments/x402/demo/paid-content\n"
+    "9. Do not reveal internal reasoning in the final response. Thoughts must only appear in the thoughts channel.\n"
+    "10. For x402 micropayment demos, ALWAYS use this URL: http://localhost:3001/api/payments/x402/demo/paid-content\n"
     "   DO NOT use api.demo.com or any other placeholder URLs - they don't exist."
 )
 
@@ -554,6 +556,8 @@ def extract_policy_from_text(text: str) -> Optional[Dict[str, Any]]:
     lines = text.splitlines()
     name: Optional[str] = None
     rules: List[Dict[str, Any]] = []
+    category_name: Optional[str] = None
+    category_limit: Optional[float] = None
 
     for raw in lines:
         line = raw.strip()
@@ -580,6 +584,15 @@ def extract_policy_from_text(text: str) -> Optional[Dict[str, Any]]:
             amount = _parse_number(line)
             if amount is not None:
                 rules.append({"type": "monthlyBudget", "params": {"budget": amount}})
+        if "category" in lower and (" is " in lower or ":" in lower):
+            import re
+            match = re.search(r"category\s*(?:is|:)\s*([a-z0-9 _-]+)", line, re.IGNORECASE)
+            if match:
+                category_name = match.group(1).strip()
+        if "category" in lower and "limit" in lower:
+            amount = _parse_number(line)
+            if amount is not None:
+                category_limit = amount
 
     # Fallback: single "limit" mention without qualifier -> maxPerTransaction
     if not rules:
@@ -588,6 +601,10 @@ def extract_policy_from_text(text: str) -> Optional[Dict[str, Any]]:
             amount = _parse_number(text)
             if amount is not None:
                 rules.append({"type": "maxPerTransaction", "params": {"max": amount}})
+
+    # Category limit override when both category and limit are present
+    if category_name and category_limit is not None:
+        rules.append({"type": "categoryLimit", "params": {"limits": {category_name: category_limit}}})
 
     if not rules:
         return None

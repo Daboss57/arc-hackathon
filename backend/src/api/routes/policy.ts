@@ -31,7 +31,12 @@ router.put('/:id', (req, res) => {
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
     if (enabled !== undefined) updates.enabled = enabled;
-    if (rules !== undefined) updates.rules = rules;
+    if (rules !== undefined) {
+        if (!Array.isArray(rules)) {
+            return res.status(400).json({ error: 'rules must be an array' });
+        }
+        updates.rules = rules;
+    }
     const policy = updatePolicy(req.params.id, updates as any);
     if (!policy) {
         return res.status(404).json({ error: 'Policy not found' });

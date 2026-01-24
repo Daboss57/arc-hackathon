@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import type { Policy } from '../policy/types.js';
@@ -29,9 +30,11 @@ const DEFAULT_STATE: PersistedState = {
     },
 };
 
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(moduleDir, '..', '..', '..');
 const STORE_PATH = config.DATA_STORE_PATH
     ? path.resolve(config.DATA_STORE_PATH)
-    : path.resolve(process.cwd(), 'data', 'store.json');
+    : path.resolve(projectRoot, 'data', 'store.json');
 
 let state: PersistedState = {
     policies: [],
