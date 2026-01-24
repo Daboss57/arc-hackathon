@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { 
     fetchPolicies, 
-    updatePolicy as updatePolicyInDb, 
+    updatePolicy,
     deletePolicy as deletePolicyInDb,
     type Policy, 
     type PolicyRule 
@@ -11,7 +11,6 @@ interface PolicyCockpitProps {
     userId: string;
     refreshKey?: number;
     onPolicyChange?: () => void;
-    userId: string;
 }
 
 function renderRule(rule: PolicyRule): string {
@@ -55,7 +54,7 @@ export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCock
         const load = async () => {
             setLoading(true);
             try {
-                const data = await listPolicies(userId);
+                const data = await fetchPolicies(userId);
                 if (!active) return;
                 setPolicies(data);
                 setError(null);
@@ -75,7 +74,7 @@ export function PolicyCockpit({ refreshKey, onPolicyChange, userId }: PolicyCock
 
     const handleToggle = async (policy: Policy) => {
         try {
-            await updatePolicy(policy.id, { enabled: !policy.enabled }, userId);
+            await updatePolicy(policy.id, { enabled: !policy.enabled });
             setPolicies((prev) =>
                 prev.map((p) => (p.id === policy.id ? { ...p, enabled: !p.enabled } : p))
             );
