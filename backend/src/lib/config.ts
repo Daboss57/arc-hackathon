@@ -26,7 +26,11 @@ function loadConfig() {
         process.exit(1);
     }
 
-    return parsed.data;
+    const config = parsed.data;
+    if (process.env.VERCEL) {
+        config.DATA_STORE_PATH = '/tmp/store.json';
+    }
+    return config;
 }
 
 export const config = loadConfig();

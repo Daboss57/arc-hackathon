@@ -4,12 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
-// On Vercel, force data handle to /tmp
-if (process.env.VERCEL) {
-    logger.warn('Running on Vercel, using /tmp/store.json for storage');
-    // @ts-ignore
-    config.DATA_STORE_PATH = '/tmp/store.json';
-}
+
 
 import { initializeWallet, hydrateTransactionsFromStore } from '../treasury/wallet.service.js';
 import { seedDefaultPolicies, loadPoliciesFromStore } from '../policy/engine.js';
